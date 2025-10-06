@@ -1,7 +1,7 @@
 ---
-name: Glances
+name: ga_Glances
 version: dev
-slug: glances
+slug: ga_glances
 description: A cross-platform system monitoring tool
 url: https://github.com/hassio-addons/addon-glances
 codenotary: codenotary@frenck.dev
