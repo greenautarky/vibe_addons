@@ -4,6 +4,7 @@ version: dev
 slug: ga_glances
 description: A cross-platform system monitoring tool
 url: https://github.com/hassio-addons/addon-glances
+image: ghcr.io/greenautarky/ga_glances-{arch}
 codenotary: codenotary@frenck.dev
 ingress: true
 ingress_port: 0
