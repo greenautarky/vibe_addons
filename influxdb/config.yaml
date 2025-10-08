@@ -1,7 +1,7 @@
 ---
-name: ga_InfluxDB
+name: ga_InfluxDBV1
 version: dev
-slug: ga_influxdb
+slug: ga_influxdbv1
 description: Scalable datastore for metrics, events, and real-time analytics
 url: https://github.com/hassio-addons/addon-influxdb
 codenotary: codenotary@frenck.dev
@@ -47,3 +47,4 @@ schema:
     - name: match(^INFLUXDB_([A-Z0-9_])+$)
       value: str
   leave_front_door_open: bool?
+image": "ghcr.io/zigbee2mqtt/ga_influxdbv1-{arch}"
