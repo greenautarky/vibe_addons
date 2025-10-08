@@ -3,7 +3,7 @@ name: ga_Glances
 version: 4.3.0.8
 slug: ga_glances
 description: A cross-platform system monitoring tool
-url: https://github.com/hassio-addons/addon-glances
+url: https://github.com/greenautarky/glances
 image: ghcr.io/greenautarky/ga_glances-{arch}
 ingress: true
 ingress_port: 0
