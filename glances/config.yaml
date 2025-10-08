@@ -1,11 +1,10 @@
 ---
 name: ga_Glances
-version: dev
+version: 4.3.0.8
 slug: ga_glances
 description: A cross-platform system monitoring tool
 url: https://github.com/hassio-addons/addon-glances
 image: ghcr.io/greenautarky/ga_glances-{arch}
-codenotary: codenotary@frenck.dev
 ingress: true
 ingress_port: 0
 ingress_stream: true
@@ -23,11 +22,10 @@ ports_description:
 map:
   - addons
   - backup
-  - addon_config:rw
+  - config:rw
   - share
   - ssl
   - media
-  - homeassistant_config:rw
 hassio_api: true
 auth_api: true
 docker_api: true
@@ -42,15 +40,15 @@ options:
   certfile: fullchain.pem
   keyfile: privkey.pem
   influxdb:
-    enabled: false
-    host: a0d7b954-influxdb
+    enabled: true
+    host: localhost
     port: 8086
     interval: 60
     ssl: false
     version: 1
-    username: glances
-    password: ""
-    database: glances
+    username: ga_glances
+    password: ga_glances
+    database: ga_glances
     prefix: localhost
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
