@@ -1,0 +1,48 @@
+---
+# Docu https://developers.home-assistant.io/docs/add-ons/configuration/#add-on-configuration
+name: "VOS Manager"
+version: "0.1.9"
+slug: "ga_vosmanager"
+image: ghcr.io/greenautarky/ga_vosmanager-{arch}
+
+full_access: true  # This ensures the add-on can write to system
+hassio_api: true  # This ensures the add-on can access the Home Assistant OS API
+hassio_role: admin  # This ensures the add-on can access the Home Assistant OS API
+homeassistant_api	: true  # This ensures the add-on can access the Home Assistant API
+docker_api: true  # This ensures the add-on can access the Docker API
+# compare to https://github.com/home-assistant/supervisor/issues/2677
+
+priviledged: 
+  - SYS_ADMIN  # This ensures the add-on can access the whole System
+apparmor: false  # This ensures the add-on can access the whole System
+
+
+journald: true 
+description: GreenAutarky VOS
+url: https://github.com/greenautarky/HA-addon
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+options:
+  log_level: info
+  seconds_between_quotes: 5
+  ga_zigbee2mqtt_password: "!secret ga_zigbee2mqtt_password"
+  ga_ha_influx_user_password: "!secret ga_ha_influx_user_password"
+schema:
+  log_level: list(trace|debug|info|notice|warning|error|fatal)
+  seconds_between_quotes: int(1,120)
+
+map:
+  - type: share
+    read_only: false
+  - type: ssl
+  - type: homeassistant_config
+    read_only: false
+  - type: all_addon_configs
+    read_only: false
+  - type: data
+    read_only: false
+    path: /data/
+    

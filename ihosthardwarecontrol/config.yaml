@@ -1,0 +1,39 @@
+name: iHost Hardware Control
+version: 1.1.2
+slug: ga_ihosthardwarecontrol
+description: >-
+  In the HA over iHost project, the iHost Hardware Control Add-on is used to
+  manage physical buttons and indicator lights on the device. It registers
+  these components as entities in Home Assistant, allowing users to configure
+  automation rules directly in HA for more flexible hardware interaction control.
+uart: true
+udev: true
+url: https://github.com/iHost-Open-Source-Project/hassio-ihost-addon/tree/master/hassio-ihost-hardware-control
+startup: application
+boot: auto
+arch:
+  - armv7
+services:
+  - mqtt:need
+map:
+  - data:rw
+  - config:rw
+  - type: share
+    read_only: false
+  - type: homeassistant_config
+    read_only: false
+    path: /config
+options:
+  data_path: /config/iHost-Hardware-Control
+  mqtt: {}
+schema:
+  data_path: str
+  mqtt:
+    server: "str?"
+    username: "str?"
+    password: "str?"
+hassio_role: manager
+hassio_api: true
+image: ghcr.io/greenautarky/ga_ihosthardwarecontrol-{arch}
+devices:
+  - /dev/ttyS3
