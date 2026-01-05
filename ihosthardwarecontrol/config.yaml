@@ -26,12 +26,14 @@ map:
 options:
   data_path: /config/iHost-Hardware-Control
   mqtt: {}
+  log_level: warning
 schema:
   data_path: str
   mqtt:
     server: "str?"
     username: "str?"
     password: "str?"
+  log_level: list(debug|info|warning|error|critical)
 hassio_role: manager
 hassio_api: true
 image: ghcr.io/greenautarky/ga_ihosthardwarecontrol-{arch}
