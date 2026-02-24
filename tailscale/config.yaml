@@ -1,10 +1,10 @@
 ---
 name: ga_Tailscale
-version: 0.26.1
+version: "0.26.2"
 slug: ga_tailscale
 description: Zero config VPN for building secure networks
-url: https://github.com/greenautarky/vibe_addons
-image: ghcr.io/hassio-addons/tailscale/{arch}
+url: https://github.com/greenautarky/ga_tailscale
+image: ghcr.io/greenautarky/ga_tailscale-{arch}
 ingress: true
 ingress_port: 0
 ingress_stream: true
