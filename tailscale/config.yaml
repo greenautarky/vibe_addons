@@ -1,6 +1,6 @@
 ---
 name: ga_Tailscale
-version: "0.26.2"
+version: "0.27.0"
 slug: ga_tailscale
 description: Zero config VPN for building secure networks
 url: https://github.com/greenautarky/ga_tailscale
@@ -33,7 +33,7 @@ schema:
   advertise_exit_node: bool?
   advertise_connector: bool?
   advertise_routes:
-    - "match(^(((25[0-5]|(2[0-4]|1\\d|[1-9]?)\\d)\\.){3}(25[0-5]|(2[0-4]|1\\d|[1-9]?)\\d)\\/(3[0-2]|[12]?\\d)|[a-fA-F\\d.:]+:[a-fA-F\\d.:]+\\/(12[0-8]|(1[01]|[1-9]?)\\d))$)?"
+    - "match(^(((25[0-5]|(2[0-4]|1\d|[1-9]?)\d)\.){3}(25[0-5]|(2[0-4]|1\d|[1-9]?)\d)\/(3[0-2]|[12]?\d)|[a-fA-F\d.:]+:[a-fA-F\d.:]+\/(12[0-8]|(1[01]|[1-9]?)\d))$)?"
   log_level: list(trace|debug|info|notice|warning|error|fatal)?
   login_server: url?
   share_homeassistant: list(disabled|serve|funnel)?
