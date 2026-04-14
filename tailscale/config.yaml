@@ -27,6 +27,8 @@ map:
   - share:rw
 ports:
   41641/udp: null
+options:
+  share_homeassistant: funnel
 schema:
   accept_dns: bool?
   accept_routes: bool?
