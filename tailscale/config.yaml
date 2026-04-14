@@ -1,6 +1,6 @@
 ---
 name: ga_Tailscale
-version: "0.27.0"
+version: "0.27.1"
 slug: ga_tailscale
 description: Zero config VPN for building secure networks
 url: https://github.com/greenautarky/ga_tailscale
