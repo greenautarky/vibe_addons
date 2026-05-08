@@ -1,6 +1,6 @@
 ---
 name: "GA Manager"
-version: "0.3.2"
+version: "0.4.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
