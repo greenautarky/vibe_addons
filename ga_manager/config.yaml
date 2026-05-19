@@ -1,6 +1,6 @@
 ---
 name: "GA Manager"
-version: "0.16.0"
+version: "0.16.1"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -24,9 +24,15 @@ ingress_port: 8099
 panel_icon: mdi:shield-cog
 panel_admin: true
 panel_title: "GA Manager"
-priviledged:
+privileged:
   - SYS_ADMIN
 apparmor: false
+# `protected: false` is required for `docker_api: true` and `full_access: true`
+# to actually take effect — Supervisor silently no-ops them on protected addons
+# (the default). See supervisor/docker/app.py:516. The zigbee-firmware-update
+# worker needs the resulting /run/docker.sock bind to docker exec into the
+# sibling dongle-flasher addon container.
+protected: false
 journald: true
 host_network: false
 services:
