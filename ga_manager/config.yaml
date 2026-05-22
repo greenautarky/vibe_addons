@@ -1,6 +1,13 @@
 ---
+# Published store entry for the GA Manager add-on.
+# Synced from the source repo greenautarky/ga_manager (ga_manager/config.yaml).
+# The only delta vs. the source config is the `image:` key below: this entry
+# is install-by-pull (the multi-arch image is built by the source repo's CI
+# and published to GHCR), so the source repo can stay private.
+# Keep `version` in lock-step with the GHCR image tag and with the OS bake
+# list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.17.0"
+version: "0.22.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -28,23 +35,30 @@ privileged:
   - SYS_ADMIN
 apparmor: false
 # `protected: false` is required for `docker_api: true` and `full_access: true`
-# to actually take effect — Supervisor silently no-ops them on protected addons
-# (the default). See supervisor/docker/app.py:516. The zigbee-firmware-update
-# worker needs the resulting /run/docker.sock bind to docker exec into the
-# sibling dongle-flasher addon container.
+# to actually take effect — Supervisor silently ignores them on protected
+# addons (the default). With protected: true + docker_api: true, no
+# docker.sock is mounted in the container — verified 2026-05-19 on KIB-SON-0.
+# We need docker exec into sibling addon containers (dongle-flasher) for
+# the zigbee-firmware-update worker.
 protected: false
 journald: true
 host_network: false
 services:
-  - mqtt:need
+  - mqtt:want
 ports:
-  "8099/tcp": null
+  "8099/tcp": 8099
 ports_description:
-  "8099/tcp": "GA Manager REST API (Phase 1: Ingress only; Phase 5: NetBird-exposed via Caddy)"
+  "8099/tcp": "GA Manager REST API. Reachable on host:8099 (=NetBird IP). Bearer auth required for non-Ingress access — token at /data/auth.token (mode 0600). Until Phase 5+ adds rate-limiting + TLS + per-token action-whitelist, the only auth is the Bearer token; rotate via `rm /data/auth.token && ha addons restart`."
 map:
   - type: share
     read_only: false
   - type: ssl
+  # homeassistant_config (rw) — mounted at /config in the addon container.
+  # The T4 `converge` worker writes /config/custom_components/ (the
+  # greenautarky_onboarding component) and /config/.storage/ (the
+  # onboarding-wizard trigger). NB: like docker_api, the rw mount only
+  # takes effect with `protected: false` set above (Supervisor gotcha,
+  # see memory/supervisor_docker_api_gotcha.md).
   - type: homeassistant_config
     read_only: false
   - type: all_addon_configs
@@ -66,6 +80,8 @@ options:
       ram_crit: 95
       load5_warn: 4.0
       load5_crit: 8.0
+      boot_grace_period: 600
+      reboots_7d_warn: 5
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
   health_check:
@@ -80,3 +96,5 @@ schema:
       ram_crit: int(0,100)
       load5_warn: float(0.0,99.0)
       load5_crit: float(0.0,99.0)
+      boot_grace_period: int(0,3600)
+      reboots_7d_warn: int(1,100)
