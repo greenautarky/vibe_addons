@@ -5,6 +5,17 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.23.2
+
+- Converge sets **Zigbee2MQTT channel 15** (`advanced.channel`) at fresh
+  network formation — completes stage 64. Gated to first provisioning only
+  (serial config newly written ⇒ no network yet), so the channel applies at
+  formation with zero migration. Verified on a canary that the ember adapter
+  *does* migrate a formed network in-place on a channel change and SONOFF
+  devices follow (15→20→25→15, 4/4 online) — but we deliberately do **not**
+  rely on that for provisioned customer devices. +2 tests. See the source
+  CHANGELOG for detail.
+
 ## 0.23.1
 
 - Fresh-boot fixes for the 0.23.0 converge work (found by flashing a truly
