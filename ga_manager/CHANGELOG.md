@@ -5,6 +5,16 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.23.1
+
+- Fresh-boot fixes for the 0.23.0 converge work (found by flashing a truly
+  fresh device): write to **`/homeassistant`** (Core's config dir) not
+  `/config` — fixes the custom_component, wizard trigger AND MQTT entry
+  placement; **readiness gating** (wait for addons started + Mosquitto's mqtt
+  service) so step 8 doesn't no-op on first boot; **one gated Core restart**
+  so the `.storage` writes actually load; `device_type` falls back to `ihost`.
+  +7 tests, full suite 325/325. See the source CHANGELOG for detail.
+
 ## 0.23.0
 
 - Converge closes fresh-flash provisioning gaps (= ga-flasher-py stages
