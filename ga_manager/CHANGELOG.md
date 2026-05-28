@@ -5,6 +5,16 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.23.0
+
+- Converge closes fresh-flash provisioning gaps (= ga-flasher-py stages
+  64/65/69): enforces load-bearing **addon flags** (watchdog/auto_update/
+  boot), sets **Zigbee2MQTT serial** config (hardware-keyed on device_type),
+  writes the **HA-Core MQTT integration entry**. New single-source
+  `addon_expectations` (converge applies / healthcheck verifies) + safe
+  `addon_merge_options` helper. Full suite 318/318 PASS. See the source
+  CHANGELOG for rationale + known fresh-boot readiness/timing follow-ups.
+
 ## 0.22.3
 
 - Zigbee converge step 5 is now tiered (Tier 0 reads firmware from z2m's
