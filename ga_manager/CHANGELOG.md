@@ -5,6 +5,16 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.24.0
+
+- On-device **provisioning self-check** (converge step 11): the device verifies
+  its own provisioning state after converge (the equivalent of ga-flasher-py
+  stage 81) instead of the flasher SSHing in to assert it. Checks each converge
+  step's persisted effect — addons, addon flags, z2m serial+channel, DNS, MQTT
+  entry, custom_component, Core un-forked, wizard armed. Best-effort: a FAIL is
+  logged + recorded but does not undo convergence. +16 tests. See source
+  CHANGELOG for detail.
+
 ## 0.23.2
 
 - Converge sets **Zigbee2MQTT channel 15** (`advanced.channel`) at fresh
