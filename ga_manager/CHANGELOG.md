@@ -5,6 +5,29 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.26.0
+
+- **`ghcr-creds-write`** worker — writes `/share/ga/ghcr-creds.json` (mode 0600,
+  atomic, idempotent) so ga-fleet-manager can deliver / rotate the shared
+  `read:packages` token for private GHCR addon images. Companion to the
+  `docker-registry-ensure` worker shipped in 0.25.0. Token never logged.
+  See source CHANGELOG for detail.
+
+## 0.25.0
+
+- **Fresh-flash provisioning gaps** found on the A3 bench: z2m `onboarding:false`
+  (Zigbee forms), wizard trigger `version:2` (matches component `STORAGE_VERSION`),
+  placement-gated integration enable-list (writes `<domain>:` to
+  configuration.yaml so config_flow custom_components actually load).
+- **Generalized for ga_frontend_bundle**: `_step_place_component` loops all
+  staged components; `provision_verify` gains live checks (`z2m_formed`,
+  `integrations_loaded`); Core-restart `verify-on-raise` (tolerates the
+  cosmetic mid-restart conn drop).
+- **D / D2**: `docker-registry-ensure` worker + converge step 0.5 (push GHCR
+  creds into Supervisor's `/docker/registries`); `_step_migrate_legacy_addons`
+  (one-time migration from `48a36628_*`/`95cc8708_*` slugs to vibe_addons
+  prefixed slugs, drops the PAT-in-URL repo). See source CHANGELOG for detail.
+
 ## 0.24.0
 
 - On-device **provisioning self-check** (converge step 11): the device verifies
