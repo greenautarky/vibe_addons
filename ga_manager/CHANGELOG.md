@@ -5,6 +5,14 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.26.2
+
+- **Rotation-blind bug fix** — `docker-registry-ensure` now detects PAT
+  rotation via a persistent sha-marker (`/share/ga/.ghcr-creds.applied-sha`),
+  not by username-comparison. Before this, rotating the GHCR token
+  silently left Supervisor on the old (often revoked) token. See source
+  CHANGELOG for detail.
+
 ## 0.26.1
 
 - **HTTP routes for `ghcr-creds-write` + `docker-registry-ensure`** —
