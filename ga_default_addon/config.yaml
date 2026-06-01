@@ -1,0 +1,72 @@
+---
+# Published store entry for the GA Default Addon (VOS functions).
+# Synced from the source repo greenautarky/ga_default_addon
+# (default_addon/config.yaml).
+# The key delta vs. the source config: this entry is install-by-pull —
+# the multi-arch image is built by the source repo's CI and published
+# to GHCR as a PRIVATE package, so the source repo can stay private.
+# Devices need a `ghcr.io` credential in Supervisor's /docker/registries
+# to pull this image; the credential is delivered by ga-fleet-manager
+# (see ga-ihost-docs/ADDON-IMAGE-DELIVERY.md §4 Phase 1).
+# Keep `version` in lock-step with the GHCR image tag and with the OS
+# bake list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+name: "GA Default Addon"
+version: "1.1.21"
+slug: "ga_default_addon"
+description: "GA Home Assistant add-on running the default VOS functions"
+url: https://github.com/greenautarky/ga_default_addon
+codenotary: notary@greenautarky.com
+image: ghcr.io/greenautarky/ga_default_addon-{arch}
+startup: services
+boot: auto
+init: false
+arch:
+  - aarch64
+  - amd64
+  - armv7
+services:
+  - mqtt:need
+map:
+  - share:rw
+volumes:
+  /influxdb_data: share
+options:
+  INFLUXDB_HOST: 99f1cad4-ga-influxdbv1
+  INFLUXDB_PORT: 8086
+  INFLUXDB_USERNAME: ga_ha_influx_user
+  INFLUXDB_DATABASE: ga_homeassistant_db
+  INFLUXDB_GD_DATABASE: gd_data
+  INFLUXDB_PD_DATABASE: pd_data
+  LOCAL_TZ: Europe/Berlin
+  CHECK_INTERVAL: 10
+  GD_DIRECTORY: /data/gd_data
+  DATA_DURATION: 7d
+  DURATION: 7
+  PD_DIRECTORY: /data/pd_data
+  FUNCTION_RECURSION: 43200
+  LATITUDE: "51.07657"
+  LONGITUDE: "6.60159"
+  CITY: Grevenbroich
+  COUNTRY: Germany
+  TB_URL: https://thingsboard.greenautarky.com
+  TB_DEVICE_TOKEN: x
+schema:
+  INFLUXDB_HOST: str
+  INFLUXDB_PORT: int
+  INFLUXDB_USERNAME: str
+  INFLUXDB_DATABASE: str
+  INFLUXDB_GD_DATABASE: str
+  INFLUXDB_PD_DATABASE: str
+  LOCAL_TZ: str
+  CHECK_INTERVAL: int
+  GD_DIRECTORY: str
+  DATA_DURATION: str
+  DURATION: int
+  PD_DIRECTORY: str
+  FUNCTION_RECURSION: int
+  LATITUDE: str
+  LONGITUDE: str
+  CITY: str
+  COUNTRY: str
+  TB_URL: str
+  TB_DEVICE_TOKEN: str
