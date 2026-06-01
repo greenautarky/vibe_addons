@@ -5,6 +5,15 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.26.3
+
+- **MANAGED_ADDON_SLUGS missing 4 addons** — fresh-flash converge only
+  iterated `ga_mosquitto`, `ga_zigbee2mqtt`, `ga_ihosthardwarecontrol`,
+  `sonoff_dongle_flasher_for_ihost`. **Added:** `ga_tailscale`,
+  `ga_influxdbv1`, `ga_default_addon`, `ga_hmvapp_addon` — so the
+  private addons get installed automatically on a fresh device. See
+  source CHANGELOG.
+
 ## 0.26.2
 
 - **Rotation-blind bug fix** — `docker-registry-ensure` now detects PAT
