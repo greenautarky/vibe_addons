@@ -5,6 +5,16 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.26.1
+
+- **HTTP routes for `ghcr-creds-write` + `docker-registry-ensure`** —
+  0.26.0 / 0.25.0 shipped the workers but no `POST /jobs/<action>`
+  endpoint to invoke them. Found during the first canary push to
+  KIB-SON-0 (`fleet-manager` got 405). 0.26.1 wires them up.
+- **Security:** sanitized 422 validation errors so a malformed
+  `ghcr-creds-write` payload can't echo the password back to the
+  caller. See source CHANGELOG for detail.
+
 ## 0.26.0
 
 - **`ghcr-creds-write`** worker — writes `/share/ga/ghcr-creds.json` (mode 0600,
