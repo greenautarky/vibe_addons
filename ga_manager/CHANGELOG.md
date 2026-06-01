@@ -5,6 +5,14 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.26.4
+
+- **Step 1 per-addon try/except** — one addon's install failure no
+  longer aborts the rest of the loop AND the rest of converge. Found
+  on the bench reflash 2026-06-01 when ga_default_addon's install
+  threw 400 (no cred yet) and killed steps 2-11 entirely. See source
+  CHANGELOG for detail.
+
 ## 0.26.3
 
 - **MANAGED_ADDON_SLUGS missing 4 addons** — fresh-flash converge only
