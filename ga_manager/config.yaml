@@ -7,11 +7,8 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-<<<<<<< HEAD
 version: "0.27.0"
-=======
 version: "0.27.0"
->>>>>>> f44d8678 (chore(ga_manager): sync store config to source 0.27.0 (Supervisor tz baseline in converge step 8))
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
