@@ -5,6 +5,11 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.49.5
+
+- Self-heal stale `pending_reboot` marker (compare marker target
+  vs live booted OS; auto-delete once rebooted). Local-first.
+
 ## 0.49.4
 
 - **On-device addon self-healing** — health-engine restarts stopped
