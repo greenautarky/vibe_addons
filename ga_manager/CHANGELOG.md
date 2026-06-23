@@ -5,6 +5,15 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.49.3
+
+- **Revert non-functional `ga.core_auto_update_disabled`** (added 0.49.2) —
+  /core/info has no auto_update field; the check returned `unknown`
+  everywhere. Core is not auto-pulled by Supervisor.
+- **Fix `ga.image_origin`** to accept v1.2-clean upstream Core
+  (`ghcr.io/home-assistant/tinker-homeassistant`) — was flagging every
+  v1.2-clean device as crit.
+
 ## 0.49.2
 
 - **New health check `ga.core_auto_update_disabled`** — closes a
