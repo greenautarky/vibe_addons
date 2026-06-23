@@ -5,6 +5,12 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.49.2
+
+- **New health check `ga.core_auto_update_disabled`** — closes a
+  2026-06-23 audit gap. The existing `ga.auto_update_disabled` only
+  checked Supervisor; Core has an independent auto_update knob.
+
 ## 0.26.4
 
 - **Step 1 per-addon try/except** — one addon's install failure no
