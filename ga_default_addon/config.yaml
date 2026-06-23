@@ -11,7 +11,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS
 # bake list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: "1.1.21"
+version: "1.2.0"
 slug: "ga_default_addon"
 description: "GA Home Assistant add-on running the default VOS functions"
 url: https://github.com/greenautarky/ga_default_addon
