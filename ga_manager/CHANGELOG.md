@@ -5,6 +5,12 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.49.4
+
+- **On-device addon self-healing** — health-engine restarts stopped
+  load-bearing addons every tick, with per-slug TTL suppression locks
+  (Zigbee FW update keeps z2m down) + crash-loop backoff. Local-first.
+
 ## 0.49.3
 
 - **Revert non-functional `ga.core_auto_update_disabled`** (added 0.49.2) —
