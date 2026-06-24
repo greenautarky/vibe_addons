@@ -5,6 +5,52 @@ release from the [source repo](https://github.com/greenautarky/ga_manager)
 — see that repo's [CHANGELOG](https://github.com/greenautarky/ga_manager/blob/main/CHANGELOG.md)
 for full rationale, test details, and the "why".
 
+## 0.53.0
+
+- **iHost status-LED state driver** — ga_manager drives the RGB ring via the
+  local Mosquitto LED select: `Solid Yellow` = starting (not fleet-connected),
+  `Solid Green` = fleet/internet reachable, `Breathing Red` = critical health,
+  `Off` = customer-disabled (via the onboarding LED flag). Edge-triggered +
+  self-healing + best-effort. The LED state is surfaced on the local panel,
+  `/health`, and the MQTT `health/state` blob (→ fleet-manager/cloud). +17 tests.
+
+## 0.52.0
+
+- **`influx-creds-write` worker** (per-device InfluxDB write credential) —
+  atomically writes `/share/ga-fleet-influx.yaml` which the host telegraf reads
+  (ADR-0002). Mirrors `mqtt-creds-write`; idempotent; password never logged.
+  Closes the reboot-fragile shared-password gap. +7 tests.
+
+## 0.51.0
+
+- **On-device network-signal file-drop for telegraf** — `network_telemetry_file`
+  writes the active-uplink signal (normalized `active_signal_dbm` + per-uplink
+  WiFi/LTE RSSI) as InfluxDB line-protocol to `/share/telegraf/ga-network.influx`,
+  which the host telegraf disk-buffers → signal survives a reboot during an
+  outage. Write-on-change (SD-friendly). +9 tests.
+
+## 0.50.0
+
+- **Normalized active-uplink signal** — `NetworkStatus` gains computed
+  `active_signal_dbm` / `active_uplink` / `active_backend`: one source-agnostic
+  signal field (works across openstick/arrow/ufi + the integrated modem later).
+  Surfaced on `/network/status` + the local panel. +8 tests.
+
+## 0.49.7
+
+- **On-demand `repair-bundle` worker for legacy devices** — operator-triggered
+  job writes a valid `/share/ga-fleet-bundle.yaml` for a legacy /
+  incompletely-provisioned device that has none (e.g. KIB-SON-31/49). Refuses to
+  overwrite unless `overwrite: true`. Local-first, atomic. +5 tests.
+
+## 0.49.6
+
+- **Defer watchdog=true addons to Supervisor's native watchdog** — the addon
+  auto-restart now acts only on the `error` state for `watchdog: true` addons
+  (Supervisor's watchdog handles stopped/failed), preventing the double-restart
+  collision seen on K17 ga_tailscale. watchdog=false addons keep full coverage.
+  +3 tests.
+
 ## 0.49.5
 
 - Self-heal stale `pending_reboot` marker (compare marker target
