@@ -1,5 +1,26 @@
 # Changelog  
 
+## 1.3.4
+### Added
+- Added support for **SONOFF Dongle-MZG23**.
+
+## 1.3.3
+### Fixed
+- Force Dongle-E and Dongle-LMG21 flashed with Router firmware into pairing mode when it is powered on.
+- Fixed an issue where certain dongles identified as running unknown firmware could not have a firmware selected for flashing.
+
+## 1.3.2
+### Fixed
+- Fixed an issue where certain dongles could not be properly recognized during scanning.
+
+## 1.3.1
+### Added
+- Force Dongle-PMG24 flashed with Router firmware into pairing mode when it is powered on.
+
+## 1.3.0
+### Added
+- Added support for **SONOFF Dongle-PZG23**.
+
 ## 1.2.3
 ### Fixed
 - Fixed the issue where firmware information for certain dongles could not be properly recognized.
