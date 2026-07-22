@@ -47,6 +47,10 @@ services:
   - mqtt:want
 ports:
   "8099/tcp": 8099
+# Supervisor probes /livez and restarts the addon when the process hangs.
+# Without a URL the watchdog toggle only checks "container running" — a hung
+# Python process (K6 2026-07-20: MQTT reconnect-storm, 7h dead :8099) never heals.
+watchdog: "http://[HOST]:[PORT:8099]/livez"
 ports_description:
   "8099/tcp": "GA Manager REST API. Reachable on host:8099 (=NetBird IP). Bearer auth required for non-Ingress access — token at /data/auth.token (mode 0600). Until Phase 5+ adds rate-limiting + TLS + per-token action-whitelist, the only auth is the Bearer token; rotate via `rm /data/auth.token && ha addons restart`."
 map:
@@ -82,6 +86,12 @@ options:
       load5_crit: 8.0
       boot_grace_period: 600
       reboots_7d_warn: 5
+  addon_auto_restart:
+    enabled: true
+    max_attempts: 3
+    attempt_window_s: 900
+  bluetooth:
+    enabled: false
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
   health_check:
@@ -98,3 +108,9 @@ schema:
       load5_crit: float(0.0,99.0)
       boot_grace_period: int(0,3600)
       reboots_7d_warn: int(1,100)
+  addon_auto_restart:
+    enabled: bool
+    max_attempts: int(1,20)
+    attempt_window_s: int(60,7200)
+  bluetooth:
+    enabled: bool
