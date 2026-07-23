@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.94.0"
+version: "0.95.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -92,6 +92,15 @@ options:
     attempt_window_s: 900
   bluetooth:
     enabled: false
+  firewall:
+    enabled: false
+    services:
+      ha_core: true
+      ga_manager: true
+      observer: true
+      ssh: true
+      influxdb: true
+      mqtt: true
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
   health_check:
@@ -114,3 +123,12 @@ schema:
     attempt_window_s: int(60,7200)
   bluetooth:
     enabled: bool
+  firewall:
+    enabled: bool
+    services:
+      ha_core: bool
+      ga_manager: bool
+      observer: bool
+      ssh: bool
+      influxdb: bool
+      mqtt: bool
