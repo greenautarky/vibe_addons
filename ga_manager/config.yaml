@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.93.3"
+version: "0.94.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -59,7 +59,7 @@ map:
   - type: ssl
   # homeassistant_config (rw) — mounted at /config in the addon container.
   # The T4 `converge` worker writes /config/custom_components/ (the
-  # greenautarky_onboarding component) and /config/.storage/ (the
+  # greenautarky_site component) and /config/.storage/ (the
   # onboarding-wizard trigger). NB: like docker_api, the rw mount only
   # takes effect with `protected: false` set above (Supervisor gotcha,
   # see memory/supervisor_docker_api_gotcha.md).
