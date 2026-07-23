@@ -1,5 +1,16 @@
 # Changelog
 
+## 7.1.0 (re-pin)
+
+- Revert pin from 7.1.1 back to 7.1.0. 7.1.1 dropped the http auth backend
+  (files-only, #483) to silence connection-refused log spam, but that backend
+  was also the sole source of **topic authorization** — the files ACL only
+  carries bare `user` headers, no `topic` grants. On a fresh broker start this
+  denies every SUBSCRIBE (SUBACK 128), which crash-loops Zigbee2MQTT
+  (`MQTT failed to connect, exiting`). Latent fleet-wide; surfaced on a freshly
+  flashed device (K31). 7.1.0 keeps `files,http` and works. The durable fix
+  (files-only + explicit `topic readwrite #` grants) lands in 7.1.2.
+
 ## 6.5.2
 
 - Update mosquitto to version 2.0.22
