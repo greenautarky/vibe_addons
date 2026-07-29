@@ -72,13 +72,32 @@ latest_published_tag() {
 printf '%-26s %-12s %-12s %s\n' "ADDON" "PINNED" "PUBLISHED" "STATUS"
 printf '%-26s %-12s %-12s %s\n' "-----" "------" "---------" "------"
 
-for cfg in "${root}"/*/config.yaml; do
+# Read `image:` / `version:` from either config format. Add-ons in this repo use
+# BOTH: zigbee2mqtt and hassio-ihost-sonoff-dongle-flasher ship config.json, the
+# rest config.yaml. Globbing only *.yaml silently skipped zigbee2mqtt — the
+# add-on that crash-loops in the very incident this detector was written for
+# (mosquitto 7.1.1 files-only ACL denies its SUBSCRIBE). A detector blind to the
+# case that motivated it is worse than none, because its PASS is read as cover.
+addon_field() {
+  # $1 = config path, $2 = field name
+  case "$1" in
+    *.json) jq -r --arg f "$2" '.[$f] // empty' "$1" 2>/dev/null ;;
+    *)      sed -nE "s/^$2:[[:space:]]*//p" "$1" | head -1 | tr -d '"' ;;
+  esac
+}
+
+for cfg in "${root}"/*/config.yaml "${root}"/*/config.json; do
   [ -f "$cfg" ] || continue
-  image="$(sed -nE 's/^image:[[:space:]]*//p' "$cfg" | head -1)"
+  # A directory carrying both would be reconciled twice; yaml wins, matching
+  # Supervisor's own precedence.
+  case "$cfg" in
+    *.json) [ -f "$(dirname "$cfg")/config.yaml" ] && continue ;;
+  esac
+  image="$(addon_field "$cfg" image)"
   case "$image" in *ghcr.io/greenautarky/*) : ;; *) continue ;; esac
 
   addon="$(basename "$(dirname "$cfg")")"
-  pinned="$(sed -nE 's/^version:[[:space:]]*//p' "$cfg" | head -1 | tr -d '"')"
+  pinned="$(addon_field "$cfg" version)"
   repo="$(printf '%s' "$image" | sed -E 's#^ghcr.io/##; s/\{arch\}/'"${ARCH}"'/')"
 
   published="$(latest_published_tag "$repo" || true)"
@@ -107,7 +126,7 @@ if [ "$errors" -gt 0 ]; then
 fi
 if [ "$drift" -gt 0 ]; then
   echo "FAIL: ${drift} add-on(s) pinned behind a published image (built-but-never-wired)." >&2
-  echo "      Bump the pin in <addon>/config.yaml to the published tag, or yank the stale image." >&2
+  echo "      Bump the pin in <addon>/config.{yaml,json} to the published tag, or yank the stale image." >&2
   exit 1
 fi
 echo "PASS: every self-build pin matches its newest published ghcr image."
