@@ -1,5 +1,16 @@
 # Changelog
 
+## 7.1.2
+
+- Pin the self-build to 7.1.2 (image built + published 2026-07-17, never pinned).
+  7.1.1 went files-only (#483, dropped the http auth backend) but the http `/acl`
+  endpoint was the sole source of **topic authorization** — the files ACL only
+  carries bare `user` headers, so a fresh broker denies every SUBSCRIBE
+  (SUBACK 128) and crash-loops Zigbee2MQTT. 7.1.2's `mosquitto.sh` writes an
+  explicit `topic readwrite #` grant after each user (homeassistant, addons, and
+  each configured login), restoring the access the http backend used to return.
+  Surfaced on freshly flashed K31. Supersedes the 7.1.0 rollback (#65).
+
 ## 6.5.2
 
 - Update mosquitto to version 2.0.22
