@@ -1,0 +1,32 @@
+name: Pin drift (built-but-never-wired)
+
+# Reconcile each self-build add-on's pinned version (<addon>/config.yaml)
+# against the newest tag actually published on ghcr. Catches the failure mode
+# behind the ga_mosquitto 7.1.1→K31 incident: a fixed image (7.1.2) was built +
+# published but the pin was never bumped, so devices kept pulling the broken one.
+
+on:
+  pull_request:
+    paths:
+      - "*/config.yaml"
+      - "tools/check_pin_drift.sh"
+      - ".github/workflows/pin-drift.yaml"
+  schedule:
+    - cron: "0 7 * * 1"   # Mondays 07:00 UTC — weekly drift sweep
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  pin-drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconcile pinned vs published (ghcr)
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash tools/check_pin_drift.sh
