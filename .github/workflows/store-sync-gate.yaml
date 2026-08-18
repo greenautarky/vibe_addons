@@ -1,0 +1,40 @@
+name: store-sync-gate
+
+# The gate that keeps this store repo equal to what each add-on's source repo
+# renders. It ships with fixtures and they run on every change, because a red
+# proof pasted into a review is evidence once, about one version, and nothing
+# re-checks it when the gate is edited a month later.
+#
+# Both sets are mandatory: must_fail (inputs the gate has to reject) and
+# must_pass (inputs it must not). The suite imports the LIVE scripts from
+# scripts/ — never a copy — and fails rather than skips if it cannot find them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "tests/store_sync_gate/**"
+      - ".github/workflows/store-sync-gate.yaml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "tests/store_sync_gate/**"
+      - ".github/workflows/store-sync-gate.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: pip install --quiet "PyYAML>=6,<7"
+      - name: Gate fixtures (must_fail + must_pass + idempotence)
+        run: python3 tests/store_sync_gate/run_fixtures.py
