@@ -45,18 +45,58 @@ HEADER = """{mark} for the {name} add-on.
 """
 
 
-def render(source_text: str, image: str, name: str = "GA", repo: str = "greenautarky") -> str:
-    has_header = HEADER_MARK in source_text
-    has_image = any(line.startswith("image:") for line in source_text.splitlines())
+class RenderError(RuntimeError):
+    """The source cannot be rendered into a valid store entry."""
 
-    out: list[str] = []
-    for i, line in enumerate(source_text.splitlines(keepends=True), start=1):
-        out.append(line)
-        if i == 1 and not has_header:
-            out.append(HEADER.format(mark=HEADER_MARK, name=name, repo=repo))
-        if line.startswith("codenotary:") and not has_image:
-            out.append(f"image: {image}\n")
-    return "".join(out)
+
+def _insert_after(lines: list[str], predicate, payload: str) -> bool:
+    for i, line in enumerate(lines):
+        if predicate(line):
+            lines.insert(i + 1, payload)
+            return True
+    return False
+
+
+def render(source_text: str, image: str, name: str = "GA", repo: str = "greenautarky") -> str:
+    """Source config -> store entry. Raises RenderError rather than emitting a
+    store entry that would be broken."""
+    lines = source_text.splitlines(keepends=True)
+    if not lines:
+        raise RenderError("source config is empty")
+
+    has_header = HEADER_MARK in source_text
+    has_image = any(line.startswith("image:") for line in lines)
+
+    if not has_image:
+        # Anchor order matters. ga_manager's source carries `codenotary:`;
+        # ga_default_addon's and ga_hmvapp_addon's do not — anchoring only on
+        # codenotary produced a store entry with NO `image:` key at all, which
+        # would stop the add-on being install-by-pull: the Supervisor could
+        # neither install nor update it. Fall back to `slug:`, and refuse to
+        # render if neither anchor exists.
+        payload = f"image: {image}\n"
+        placed = (
+            _insert_after(lines, lambda l: l.startswith("codenotary:"), payload)
+            or _insert_after(lines, lambda l: l.startswith("slug:"), payload)
+        )
+        if not placed:
+            raise RenderError(
+                "cannot place `image:` — the source has neither a `codenotary:` "
+                "nor a `slug:` line to anchor it to"
+            )
+
+    if not has_header:
+        header = HEADER.format(mark=HEADER_MARK, name=name, repo=repo)
+        # After a leading `---` when there is one, otherwise at the very top.
+        if lines[0].strip() == "---":
+            lines.insert(1, header)
+        else:
+            lines.insert(0, header)
+
+    out = "".join(lines)
+    if not any(l.startswith("image:") for l in out.splitlines()):
+        raise RenderError("rendered store entry has no `image:` key — refusing to emit it")
+    return out
 
 
 def main(argv: list[str]) -> int:
@@ -72,7 +112,11 @@ def main(argv: list[str]) -> int:
     if not text.strip():
         print("::error::source config is empty — refusing to render", file=sys.stderr)
         return 1
-    sys.stdout.write(render(text, args.image, args.name, args.source_repo))
+    try:
+        sys.stdout.write(render(text, args.image, args.name, args.source_repo))
+    except RenderError as e:
+        print(f"::error::{e}", file=sys.stderr)
+        return 1
     return 0
 
 
