@@ -35,7 +35,7 @@ import yaml
 # re-implements the render rules verifies its own copy and stays green while
 # the real renderer drifts.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from render_store_config import render  # noqa: E402
+from render_store_config import RenderError, render  # noqa: E402
 
 
 def _fmt(value: Any) -> str:
@@ -79,9 +79,14 @@ def main(argv: list[str]) -> int:
         print("::error::failing closed — an unreadable store config is not proof of sync")
         return 1
 
-    rendered_cfg = yaml.safe_load(
-        render(source_text, args.image, args.name, args.source_repo)
-    ) or {}
+    try:
+        rendered_cfg = yaml.safe_load(
+            render(source_text, args.image, args.name, args.source_repo)
+        ) or {}
+    except RenderError as e:
+        print(f"::error::the source cannot be rendered into a store entry: {e}")
+        print("::error::failing closed — an unrenderable source is not proof of sync")
+        return 1
 
     if not rendered_cfg:
         print("::error::rendered source is empty — refusing to report success")
