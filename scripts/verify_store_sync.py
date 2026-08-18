@@ -43,21 +43,36 @@ def _fmt(value: Any) -> str:
     return text if len(text) <= 140 else text[:137] + "..."
 
 
-def compare(rendered: dict[str, Any], store: dict[str, Any]) -> list[str]:
-    """Key-by-key diff of two parsed configs. Pure — the fixtures exercise this
-    exact function, not a re-implementation of the rules."""
+# `version` is compared but never blocks. A canary is published from a feature
+# branch with a pre-release tag and the store is pointed at it by hand, so the
+# store legitimately runs ahead of the default branch for a while; the same
+# happens for the moments between a bump and the lock-step sync. The previous
+# per-add-on checker had this carve-out and said so; it was lost in the move to
+# render-based comparison and immediately blocked two publishes of an add-on
+# whose canary was doing exactly that. Everything the gate exists for — ports,
+# options, schema, image, map, arch — stays hard.
+ADVISORY_KEYS = frozenset({"version"})
+
+
+def compare(rendered: dict[str, Any], store: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Key-by-key diff of two parsed configs. Returns (problems, warnings).
+    Pure — the fixtures exercise this exact function, not a re-implementation."""
     problems: list[str] = []
+    warnings: list[str] = []
     rk, sk = set(rendered), set(store)
     for key in sorted(rk - sk):
         problems.append(f"key `{key}` is in the source but MISSING from the store")
     for key in sorted(sk - rk):
         problems.append(f"key `{key}` is in the store but GONE from the source")
     for key in sorted(rk & sk):
-        if rendered[key] != store[key]:
-            problems.append(
-                f"key `{key}` DIFFERS — source={_fmt(rendered[key])} store={_fmt(store[key])}"
-            )
-    return problems
+        if rendered[key] == store[key]:
+            continue
+        message = f"key `{key}` DIFFERS — source={_fmt(rendered[key])} store={_fmt(store[key])}"
+        if key in ADVISORY_KEYS:
+            warnings.append(message + " (advisory: a canary or a pending sync)")
+        else:
+            problems.append(message)
+    return problems, warnings
 
 
 def main(argv: list[str]) -> int:
@@ -92,7 +107,9 @@ def main(argv: list[str]) -> int:
         print("::error::rendered source is empty — refusing to report success")
         return 1
 
-    problems = compare(rendered_cfg, store_cfg)
+    problems, warnings = compare(rendered_cfg, store_cfg)
+    for w in warnings:
+        print(f"::warning::{w}")
     if problems:
         print("::error::store config does NOT match the source. The Supervisor reads the "
               "STORE copy, so this change reaches no device:")
