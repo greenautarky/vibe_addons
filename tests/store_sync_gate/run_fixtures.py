@@ -62,7 +62,7 @@ def main() -> int:
             checked += 1
             rendered = yaml.safe_load(renderer.render(source_text, IMAGE)) or {}
             store = yaml.safe_load(store_text) or {}
-            problems = gate.compare(rendered, store)
+            problems, _warnings = gate.compare(rendered, store)
             if kind == "must_fail" and not problems:
                 failures.append(f"must_fail/{name}: gate did NOT flag it")
             elif kind == "must_fail":
