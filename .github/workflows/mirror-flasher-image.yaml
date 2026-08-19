@@ -65,6 +65,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # CVE GATE on the VENDOR image BEFORE we republish it. This is a byte-mirror
+      # of a third-party image we don't build, so we cannot patch it — but a
+      # FIXABLE HIGH/CRITICAL means a newer vendor tag exists with the fix, so the
+      # gate blocks the mirror until SOURCE_VERSION is bumped to the patched tag.
+      # `--ignore-unfixed` so an unfixable vendor CVE cannot permanently wedge the
+      # mirror. trivy reads the package DB (arch-independent), so scanning the
+      # armv7 image from an amd64 runner is fine.
+      - name: CVE GATE — vendor image (fixable HIGH/CRITICAL blocks the mirror)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="${SRC_NS}/${SRC_NAME}-${{ matrix.arch }}:${SOURCE_VERSION}"
+          docker run --rm aquasec/trivy:latest image \
+            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
+            --exit-code 1 --no-progress "$SRC"
+
       - name: Mirror ${{ matrix.arch }} vendor:${{ env.SOURCE_VERSION }} -> GA:${{ steps.ver.outputs.version }}
         shell: bash
         run: |
