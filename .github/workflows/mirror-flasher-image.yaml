@@ -1,0 +1,85 @@
+name: Mirror dongle-flasher image to GHCR (greenautarky)
+
+# The SONOFF dongle-flasher is a VENDOR image (no Dockerfile we build). To ship a
+# GA config change (e.g. dropping host_network) we must bump the addon version —
+# and the Supervisor uses the addon version AS the image tag (docker/addon.py:
+# `tag=str(self.addon.version)`), so a bumped version needs an image at that tag.
+# The vendor tags stop at 1.3.4, so we MIRROR the vendor image byte-for-byte to
+# `ghcr.io/greenautarky/ga_dongle_flasher-<arch>:<version>` — no rebuild, just a
+# registry-to-registry copy of the exact same layers. See ga-ihost-docs ADR-0015
+# / Odoo #700 and vibe_addons#94.
+#
+# `SOURCE_VERSION` is the vendor tag whose bytes we copy; `version` in
+# config.json is the GA tag we publish them under. They differ on purpose: the
+# GA bump carries a config change, not new image content.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "hassio-ihost-sonoff-dongle-flasher/config.json"
+      - ".github/workflows/mirror-flasher-image.yaml"
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  SRC_NS: ghcr.io/ihost-open-source-project
+  SRC_NAME: hassio-ihost-sonoff-dongle-flasher
+  SOURCE_VERSION: "1.3.4"          # vendor tag to copy bytes from
+  DST_NS: ghcr.io/greenautarky
+  DST_NAME: ga_dongle_flasher
+  ADDON_DIR: hassio-ihost-sonoff-dongle-flasher
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [armv7, aarch64, amd64]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read GA addon version from config.json
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          f="${ADDON_DIR}/config.json"
+          ver=$(python3 -c "import json,sys; print(json.load(open('$f'))['version'])")
+          if [ -z "${ver:-}" ]; then echo "::error::no version in $f"; exit 1; fi
+          echo "version=$ver" >>"$GITHUB_OUTPUT"
+          echo "GA target version: $ver"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mirror ${{ matrix.arch }} vendor:${{ env.SOURCE_VERSION }} -> GA:${{ steps.ver.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC="${SRC_NS}/${SRC_NAME}-${{ matrix.arch }}:${SOURCE_VERSION}"
+          DST="${DST_NS}/${DST_NAME}-${{ matrix.arch }}:${{ steps.ver.outputs.version }}"
+          echo ">>> copy $SRC -> $DST (byte-identical, no rebuild)"
+          # imagetools create copies the manifest + layers registry-to-registry
+          # without pulling the platform locally. Also publish :latest per arch.
+          docker buildx imagetools create -t "$DST" "$SRC"
+          docker buildx imagetools create -t "${DST_NS}/${DST_NAME}-${{ matrix.arch }}:latest" "$SRC"
+
+      - name: Verify published tag exists and is the right platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          DST="${DST_NS}/${DST_NAME}-${{ matrix.arch }}:${{ steps.ver.outputs.version }}"
+          docker buildx imagetools inspect "$DST"

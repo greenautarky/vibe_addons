@@ -1,7 +1,15 @@
 # Changelog  
 
-## 1.3.4 — GA security config (2026-08-19)
-### Changed (GreenAutarky fork config)
+## 1.3.5 — GA security config (2026-08-19)
+### Changed (GreenAutarky)
+- **Image moved to `ghcr.io/greenautarky/ga_dongle_flasher-{arch}`, version bumped
+  1.3.4 → 1.3.5.** The version bump is the delivery vehicle: the Supervisor uses
+  the addon version as the image tag, so a config change (below) only reaches
+  installed addons via a version bump — and that needs an image at the new tag.
+  The vendor tags stop at 1.3.4, so CI (`mirror-flasher-image.yaml`) copies the
+  vendor `-{arch}:1.3.4` image **byte-for-byte** to the GA registry as
+  `ga_dongle_flasher-{arch}:1.3.5` (registry-to-registry, no rebuild — identical
+  layers). Lockstep bump in `ha-operating-system/addon-images.json`.
 - **Removed `host_network: true`.** The addon ran a persistent HTTP + WebSocket
   server (`ingress_port` 8324) that, under `host_network`, bound to `0.0.0.0` on
   every host interface — reachable on the LAN and the mesh, guarded only by an
