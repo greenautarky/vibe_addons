@@ -1,5 +1,22 @@
 # Changelog  
 
+## 1.3.4 — GA security config (2026-08-19)
+### Changed (GreenAutarky fork config)
+- **Removed `host_network: true`.** The addon ran a persistent HTTP + WebSocket
+  server (`ingress_port` 8324) that, under `host_network`, bound to `0.0.0.0` on
+  every host interface — reachable on the LAN and the mesh, guarded only by an
+  HMAC secret baked into the public image (its WebSocket accepted unauthenticated
+  connections). That is the CVE-2026-34205 pattern. Without `host_network` the
+  server binds inside the addon's bridge network namespace and is reachable
+  **only** through HA-authenticated `ingress` — the direct LAN/mesh path is gone.
+  Flashing is unaffected: hardware access is via `uart`/`udev`/`gpio` (not the
+  network), and GA's `zigbee_coordinator` drives the flasher over `docker exec`,
+  never the HTTP API. This mirrors the official HA `silabs_flasher` addon, which
+  runs no host-network server at all. See ga-ihost-docs ADR-0015 / Odoo #700.
+  Least-privilege (dropping `full_access` / unneeded caps) is a separate,
+  device-flash-tested step: the GPIO bootloader does `mount -o remount,rw /sys`,
+  which needs `SYS_ADMIN`, so the caps cannot be stripped blindly.
+
 ## 1.3.4
 ### Added
 - Added support for **SONOFF Dongle-MZG23**.
