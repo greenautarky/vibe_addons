@@ -20,7 +20,7 @@
   Flashing is unaffected: hardware access is via `uart`/`udev`/`gpio` (not the
   network), and GA's `zigbee_coordinator` drives the flasher over `docker exec`,
   never the HTTP API. This mirrors the official HA `silabs_flasher` addon, which
-  runs no host-network server at all. See ga-ihost-docs ADR-0015 / Odoo #700.
+  runs no host-network server at all. See ga-ihost-docs ADR-0016 / Odoo #700.
   Least-privilege (dropping `full_access` / unneeded caps) is a separate,
   device-flash-tested step: the GPIO bootloader does `mount -o remount,rw /sys`,
   which needs `SYS_ADMIN`, so the caps cannot be stripped blindly.
