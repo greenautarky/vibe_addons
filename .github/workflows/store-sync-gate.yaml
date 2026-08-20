@@ -16,12 +16,14 @@ on:
       - "scripts/**"
       - "tests/store_sync_gate/**"
       - "tests/resolve_addon_base/**"
+      - "tests/assert_base_matches/**"
       - ".github/workflows/store-sync-gate.yaml"
   pull_request:
     paths:
       - "scripts/**"
       - "tests/store_sync_gate/**"
       - "tests/resolve_addon_base/**"
+      - "tests/assert_base_matches/**"
       - ".github/workflows/store-sync-gate.yaml"
   workflow_dispatch:
 
@@ -45,3 +47,10 @@ jobs:
       # onto a frozen base while the merge looks green.
       - name: Base-resolver fixtures (must_fail + must_pass)
         run: python3 tests/resolve_addon_base/run_fixtures.py
+      # The other half of the same defect. The resolver makes the pipeline READ
+      # the declaration; this one proves the image that came out actually
+      # derives from it. Pure comparison logic only — no docker, no pulls: the
+      # docker half reads bytes, this half decides, and it is the deciding that
+      # has to be right.
+      - name: Declared-vs-built base fixtures (must_fail + must_pass)
+        run: python3 tests/assert_base_matches/run_fixtures.py
