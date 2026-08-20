@@ -72,14 +72,21 @@ jobs:
       # `--ignore-unfixed` so an unfixable vendor CVE cannot permanently wedge the
       # mirror. trivy reads the package DB (arch-independent), so scanning the
       # armv7 image from an amd64 runner is fine.
+      # COVERAGE ASSERTION (scripts/cve-gate.sh): a bare `trivy --exit-code 1`
+      # returns SUCCESS when it matches ZERO OS packages — an empty report is
+      # indistinguishable from a clean one. Measured 2026-08-20: the previous
+      # command here returned exit 0 on an image with 143 real binaries and no
+      # package DB. cve-gate.sh adds `--list-all-pkgs`, counts what trivy
+      # actually evaluated, and exits 2 (BROKEN SCAN, never a pass) if that is
+      # zero or below COVERAGE_MIN_PCT of the image's own apk/dpkg DB. Same
+      # fail-closed rule as scan-cves.sh in ha-operating-system. The fixtures in
+      # tests/cve-gate/ re-prove it red AND green on every change.
       - name: CVE GATE — vendor image (fixable HIGH/CRITICAL blocks the mirror)
         shell: bash
         run: |
           set -euo pipefail
           SRC="${SRC_NS}/${SRC_NAME}-${{ matrix.arch }}:${SOURCE_VERSION}"
-          docker run --rm aquasec/trivy:latest image \
-            --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed \
-            --exit-code 1 --no-progress "$SRC"
+          PKG_TYPES=os,library INDEPENDENT_COUNT=off scripts/cve-gate.sh "$SRC"
 
       - name: Mirror ${{ matrix.arch }} vendor:${{ env.SOURCE_VERSION }} -> GA:${{ steps.ver.outputs.version }}
         shell: bash
