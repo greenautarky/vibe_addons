@@ -15,11 +15,13 @@ on:
     paths:
       - "scripts/**"
       - "tests/store_sync_gate/**"
+      - "tests/resolve_addon_base/**"
       - ".github/workflows/store-sync-gate.yaml"
   pull_request:
     paths:
       - "scripts/**"
       - "tests/store_sync_gate/**"
+      - "tests/resolve_addon_base/**"
       - ".github/workflows/store-sync-gate.yaml"
   workflow_dispatch:
 
@@ -38,3 +40,8 @@ jobs:
         run: pip install --quiet "PyYAML>=6,<7"
       - name: Gate fixtures (must_fail + must_pass + idempotence)
         run: python3 tests/store_sync_gate/run_fixtures.py
+      # Same contract, different subject: the base resolver decides which image
+      # an add-on is built FROM, so a silent fallback there pins an add-on back
+      # onto a frozen base while the merge looks green.
+      - name: Base-resolver fixtures (must_fail + must_pass)
+        run: python3 tests/resolve_addon_base/run_fixtures.py
