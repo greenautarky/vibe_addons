@@ -86,13 +86,30 @@ floating `3.13-alpine3.22`. Both tags resolved to the same digest that day, so
 the identity comparison passes — correctly, today. It stops passing only once
 upstream republishes the floating tag *and* the Alpine version changes with it.
 
-A dated pin and a floating tag are two sources that happen to agree, which is not
-the same as one source. Where the workflow names a tag `build.yaml` does not,
-`--check-lineage` is the comparison that actually answers the question: identity
-answers "the right OS", lineage answers "the right image".
+**Corrected 2026-08-20 — `--check-lineage` does not rescue this case, and an
+earlier version of this file wrongly said it did.** If the two refs resolve to
+the same digest today, the built image genuinely *is* derived from the declared
+content, so the layer prefix matches too. Lineage is strictly stronger than
+identity — it catches a divergence where the content differs but the OS version
+string does not — but it is still a comparison, and here there is nothing to
+compare.
 
-The durable fix is not a flag — it is having one resolver and one declaration, so
-there is no second source to compare against.
+That is a category limit, not a missing feature:
+
+> **A comparison catches two sources that disagree. It cannot catch two sources
+> that agree by luck.**
+
+Floating-vs-pinned is the standard shape of "agree by luck". Nothing this script
+observes *after* the build can see it, because at the moment of observation there
+is no defect — the defect is structural and arrives later, the next time upstream
+republishes the floating tag, which is the one moment nobody is watching.
+
+What catches it is equality of the *references* at build time, not comparison of
+the *artifacts* afterwards — that is, one resolver reading one declaration, so
+the second source never exists. This script deliberately does **not** grow a
+`--built-from-ref` flag for it: that would ask the workflow to self-attest the
+value under test, which is the shape of audit this whole exercise exists to
+reject, and it would look like coverage while the second source remained.
 - `--no-pull` — do not refresh the declared base from its registry. Offline and
   debugging only; it makes the expectation as old as your local copy.
 
