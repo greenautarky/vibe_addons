@@ -72,7 +72,27 @@ fine".
 - `--check-lineage` — additionally requires the built image's `RootFS.Layers` to
   start with the declared base's. Exact derivation proof; misfires on squashed
   and multi-stage builds, so it is opt-in. Use it on add-ons with a plain
-  single-stage Dockerfile.
+  single-stage Dockerfile, **and on any repo whose workflow pins the base by a
+  different tag than `build.yaml` names** — see the blind spot below.
+
+## Known blind spot: a dated pin vs. a floating tag
+
+The default comparison asks *"is this the right OS?"*. It cannot see a divergence
+where two different tags still resolve to the same OS version.
+
+Measured example, 2026-08-20: one repo's `build.yaml` declared
+`armv7-base-python:3.13-alpine3.22-2025.11.1` while its workflow pinned the
+floating `3.13-alpine3.22`. Both tags resolved to the same digest that day, so
+the identity comparison passes — correctly, today. It stops passing only once
+upstream republishes the floating tag *and* the Alpine version changes with it.
+
+A dated pin and a floating tag are two sources that happen to agree, which is not
+the same as one source. Where the workflow names a tag `build.yaml` does not,
+`--check-lineage` is the comparison that actually answers the question: identity
+answers "the right OS", lineage answers "the right image".
+
+The durable fix is not a flag — it is having one resolver and one declaration, so
+there is no second source to compare against.
 - `--no-pull` — do not refresh the declared base from its registry. Offline and
   debugging only; it makes the expectation as old as your local copy.
 
