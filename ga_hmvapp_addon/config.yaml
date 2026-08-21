@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA HMVapp Addon"
-version: "1.4.0"
+version: 1.4.1
 slug: "ga_hmvapp_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_hmvapp_addon-{arch}
