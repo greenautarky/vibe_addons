@@ -6,7 +6,7 @@
 # published to GHCR), so the source repo can stay private.
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
-version: 7.2.1
+version: 7.2.2
 slug: ga_mosquitto
 name: GA Mosquitto broker
 description: An Open Source MQTT broker
