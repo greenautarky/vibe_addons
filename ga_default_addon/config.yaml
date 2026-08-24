@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: 1.3.2
+version: 1.4.0
 slug: "ga_default_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
@@ -44,6 +44,11 @@ options:
   COUNTRY: Germany
   TB_URL: https://thingsboard.greenautarky.com
   TB_DEVICE_TOKEN: x
+  # Transitional: legacy devices that have not yet migrated off the old UI
+  # still push aggregated data to the cloud DB. Every other system leaves
+  # this false. Turning it on ALSO requires the five DB_* options below;
+  # neither half works alone. Remove option + code when the migration ends.
+  legacy_cloud_push: false
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
@@ -69,4 +74,5 @@ schema:
   DB_USERNAME: str?
   DB_PASSWORD: str?
   DB_PORT: int?
+  legacy_cloud_push: bool
 init: false
