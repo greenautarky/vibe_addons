@@ -8,7 +8,16 @@ name: Pin drift (built-but-never-wired)
 on:
   pull_request:
     paths:
+      # BOTH extensions. TWO store entries are config.JSON — zigbee2mqtt and
+      # hassio-ihost-sonoff-dongle-flasher — so a yaml-only filter made every
+      # change to either of them invisible to this trigger. The drift z2m
+      # carried (2.12.1-3 pinned, -4 published) surfaced days later on an
+      # unrelated pull request, via the weekly sweep that reads everything.
+      # A gate that cannot see something it guards is not weaker for that
+      # thing; it is absent — and it still reports green, which is the part
+      # that costs.
       - "*/config.yaml"
+      - "*/config.json"
       - "tools/check_pin_drift.sh"
       - ".github/workflows/pin-drift.yaml"
   schedule:
