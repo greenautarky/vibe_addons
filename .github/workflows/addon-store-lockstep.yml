@@ -80,7 +80,12 @@ on:
         required: false
 
 permissions:
-  contents: read
+  # `write` so a dispatch from the store can push its own entry. On the
+  # workflow_call path the push still uses the caller's PAT (it may be a
+  # different repository); on the dispatch path the target IS this repository
+  # and GITHUB_TOKEN suffices. That difference is the whole reason a PUBLIC
+  # add-on can now be synced without handing it a write-capable secret.
+  contents: write
 
 jobs:
   sync-downstream:
@@ -89,8 +94,22 @@ jobs:
       - uses: actions/checkout@v4
         if: github.event_name != 'workflow_dispatch'
 
-      - name: Check out the add-on source repo (dispatch only)
+      # A PUBLIC source repo needs no credential to read, and passing an empty
+      # secret made this step fail outright — so a public add-on could not be
+      # dispatched at all. That is how ga_influxdbv1 came to be hand-synced
+      # twice on 2026-08-26: it is public, so it must not hold a write-capable
+      # token, so its own publish could not sync, and dispatching from here did
+      # not work either. Try unauthenticated first; fall back for private ones.
+      - name: Check out the add-on source repo (dispatch, public)
         if: github.event_name == 'workflow_dispatch'
+        id: src_public
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: greenautarky/${{ inputs.addon_repo }}
+
+      - name: Check out the add-on source repo (dispatch, private)
+        if: github.event_name == 'workflow_dispatch' && steps.src_public.outcome == 'failure'
         uses: actions/checkout@v4
         with:
           repository: greenautarky/${{ inputs.addon_repo }}
@@ -100,7 +119,19 @@ jobs:
         id: guard
         env:
           PAT: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
+          EVENT: ${{ github.event_name }}
+          GH_DEFAULT: ${{ github.token }}
         run: |
+          # DISPATCHED FROM THE STORE, the push target is this very repository
+          # and GITHUB_TOKEN can write it. Demanding a cross-repo PAT here was
+          # the reason a public add-on had no way to sync at all.
+          if [ "${EVENT}" = "workflow_dispatch" ] && [ -z "${PAT:-}" ]; then
+            echo "dispatched from the store itself — pushing with GITHUB_TOKEN"
+            echo "::add-mask::${GH_DEFAULT}"
+            echo "pat=${GH_DEFAULT}" >> "$GITHUB_OUTPUT"
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if [ -z "${PAT:-}" ]; then
             # Hard error, not a warning. Calling this workflow IS the statement
             # that the store should be synced; a missing token means it silently
@@ -125,7 +156,39 @@ jobs:
           fi
           echo "::add-mask::$clean"
           echo "pat=$clean" >> "$GITHUB_OUTPUT"
-          echo "enabled=true" >> "$GITHUB_OUTPUT" 
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+          # PRESENT IS NOT ALIVE, AND ALIVE IS NOT ALLOWED TO WRITE.
+          #
+          # Everything above proves a non-empty string exists. It cannot tell a
+          # working credential from a revoked one, and a revoked token fails
+          # LATER — at the push, in a job nobody opens, on the day of a release.
+          #
+          # On 2026-08-26 a leaked classic PAT was revoked on one account while
+          # three repositories carried a DOWNSTREAM_SYNC_PAT set a week earlier.
+          # Whether those were the same token could not be established from the
+          # outside: a repository secret does not name its owner, and re-running
+          # a sync with nothing to push only exercised a public READ. The answer
+          # needed a write, and a release is the wrong moment to find out.
+          #
+          # Printed: the login, the scopes header, and whether the token may
+          # write here. Never the value.
+          who="$(curl -sS -H "Authorization: Bearer $clean" -D /tmp/pat-hdr \
+                      https://api.github.com/user \
+                 | sed -n 's/.*"login": *"\([^"]*\)".*/\1/p' | head -1)"
+          scopes="$(sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p' /tmp/pat-hdr | tr -d '\r')"
+          if [ -z "$who" ]; then
+            echo "::error::DOWNSTREAM_SYNC_PAT is set but GitHub does not accept it — revoked, expired or malformed. Rotate the secret in the calling repository."
+            exit 1
+          fi
+          perm="$(curl -sS -H "Authorization: Bearer $clean" \
+                       "https://api.github.com/repos/${GITHUB_REPOSITORY}" \
+                  | sed -n 's/.*"push": *\(true\|false\).*/\1/p' | head -1)"
+          echo "token owner: ${who} | scopes: ${scopes:-<fine-grained>} | may push to ${GITHUB_REPOSITORY}: ${perm:-unknown}"
+          if [ "$perm" != "true" ]; then
+            echo "::error::The token belongs to ${who} and is alive, but cannot write to ${GITHUB_REPOSITORY}. A declared scope is a ceiling, not a grant — the effective right is the lower of the token's scope and its holder's permission."
+            exit 1
+          fi 
 
       - name: Install PyYAML
         if: steps.guard.outputs.enabled == 'true'
