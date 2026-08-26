@@ -1,4 +1,4 @@
-# Published store entry for the ga_default_addon add-on.
+# Published store entry for the GA Default Addon add-on.
 # Synced from the source repo greenautarky/ga_default_addon by CI — DO NOT EDIT BY HAND.
 # The only delta vs. the source config is the `image:` key: this entry is
 # install-by-pull (the multi-arch image is built by the source repo's CI and
@@ -28,6 +28,13 @@ options:
   INFLUXDB_HOST: 99f1cad4-ga-influxdbv1
   INFLUXDB_PORT: 8086
   INFLUXDB_USERNAME: ga_ha_influx_user
+  # Empty on purpose, and it MUST stay a declared option. The Supervisor
+  # validates options against `schema:` and silently DROPS anything absent
+  # from it — so without this entry a delivered credential disappears without
+  # a log line, the add-on connects with password=None, and every write
+  # answers 401 while the client still reports "Write successful" (it only
+  # ever wrote empty batches).
+  INFLUXDB_PASSWORD: ""
   INFLUXDB_DATABASE: ga_homeassistant_db
   INFLUXDB_GD_DATABASE: gd_data
   INFLUXDB_PD_DATABASE: pd_data
@@ -53,9 +60,28 @@ schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
   INFLUXDB_USERNAME: str
+  # `str?` = optional, so an existing install that has no password key keeps
+  # validating. This is the socket ga_manager's local-influx-creds-sync worker
+  # plugs into (the ga_manager delivery worker); until it delivers, the value stays empty and
+  # env_loader unsets it, which is exactly today's behaviour.
+  INFLUXDB_PASSWORD: str?
   INFLUXDB_DATABASE: str
   INFLUXDB_GD_DATABASE: str
   INFLUXDB_PD_DATABASE: str
+  # Mapped by env_loader and read by radiator_data / log_sensor_availability,
+  # but undeclared before 1.5.0 — so the Supervisor dropped them and MQTT_HOST
+  # was never anything but None. Declared optional with NO default in
+  # `options:`, which leaves today's behaviour bit-for-bit unchanged (the keys
+  # are absent from options.json either way) and merely makes delivery
+  # possible. NB: the add-on declares `services: mqtt:need` but no code reads
+  # the Supervisor's mqtt service — the service is read since 1.6.0.
+  MQTT_HOST: str?
+  MQTT_PORT: int?
+  MQTT_USERNAME: str?
+  MQTT_PASSWORD: str?
+  # Same class: heating_forecast reads it, env_loader maps it, nothing could
+  # ever set it, so PRESETBACK was permanently the default.
+  FORECAST_PRESETBACK: str?
   LOCAL_TZ: str
   CHECK_INTERVAL: int
   GD_DIRECTORY: str
