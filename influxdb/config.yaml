@@ -1,6 +1,13 @@
 ---
+# Published store entry for the ga_InfluxDBv1 add-on.
+# Synced from the source repo greenautarky/influxDBv1 by CI — DO NOT EDIT BY HAND.
+# The only delta vs. the source config is the `image:` key: this entry is
+# install-by-pull (the multi-arch image is built by the source repo's CI and
+# published to GHCR), so the source repo can stay private.
+# `version` stays in lock-step with the GHCR image tag and with the OS bake list
+# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: ga_InfluxDBv1
-version: "0.0.7"
+version: 0.0.12
 slug: ga_influxdbv1
 description: Scalable datastore for metrics, events, and real-time analytics
 url: https://github.com/hassio-addons/addon-influxdb
