@@ -1,0 +1,231 @@
+name: addon-store-lockstep
+
+# Keep the three copies of an add-on's identity in step, in one place:
+#
+#   source repo config.yaml  ->  vibe_addons store entry  ->  OS bake pin
+#
+# The PUBLIC vibe_addons config.yaml is what the Supervisor reads (ports,
+# options, schema, maps). Every add-on except ga_manager synced it BY HAND, so
+# a change made only in a source repo shipped an image and reached no device.
+# Two features were fleet-wide undeployable that way before anyone noticed.
+# ga_manager's publish.yaml already did this; here it is once, for everyone.
+#
+# LIVES HERE, NOT IN THE PRIVATE OPS REPO. It was written there, and its only
+# caller is a PUBLIC add-on repo — which cannot resolve a reusable workflow in
+# a private one, `access_level: organization` or not. The call failed with
+# `workflow was not found`, no jobs, no log, and the add-on could not publish
+# at all for two days before anything touched its sources and revealed it.
+# The store is public and this is store plumbing, so this is where it belongs;
+# private callers can reach it here too, while the reverse is not true.
+#
+# Deliberately SEPARATE from addon-publish.yml: that pipeline is python-shaped
+# (PyArmor/Cython obfuscation checks against /app, home-assistant base images).
+# ga_influxdbv1 is a Debian binary add-on with its own build and can never pass
+# those gates — but it needs the store sync just as much. Any add-on repo can
+# call this after its own build, whatever that build looks like.
+
+on:
+  # Dispatchable as well as callable. A store sync writes ONE line, but as a
+  # tail of the publish pipeline a failed sync could only be repaired by
+  # rebuilding every architecture — fifty minutes of QEMU for a one-line fix,
+  # which is what it cost on 2026-08-19. Dispatched, it costs a minute.
+  workflow_dispatch:
+    inputs:
+      addon_repo:
+        description: "Add-on source repo, e.g. ga_hmvapp_addon (this repo is not it)"
+        required: true
+        type: string
+      addon_dir:
+        description: "Directory holding the add-on's source config.yaml"
+        required: true
+        type: string
+      addon_slug:
+        description: "GHCR image basename, e.g. ga_hmvapp_addon"
+        required: true
+        type: string
+      store_dir:
+        description: "Directory in vibe_addons; defaults to addon_slug"
+        required: false
+        type: string
+        default: ""
+  workflow_call:
+    inputs:
+      addon_dir:
+        description: "Directory holding the add-on's source config.yaml"
+        required: true
+        type: string
+      addon_slug:
+        description: "GHCR image basename, e.g. ga_influxdbv1"
+        required: true
+        type: string
+      image_ns:
+        description: "GHCR namespace"
+        required: false
+        type: string
+        default: ghcr.io/greenautarky
+      store_dir:
+        description: >-
+          Directory inside the PUBLIC vibe_addons repo. Defaults to addon_slug
+          (right for ga_default_addon / ga_hmvapp_addon); influxdb, mosquitto
+          and zigbee2mqtt differ and must pass it explicitly.
+        required: false
+        type: string
+        default: ""
+    secrets:
+      DOWNSTREAM_SYNC_PAT:
+        description: >-
+          Write access to vibe_addons (that is all this needs since the OS pin
+          moved into ha-operating-system itself). Without it this announces
+          itself as skipped — it never silently pretends to have synced.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync-downstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name != 'workflow_dispatch'
+
+      - name: Check out the add-on source repo (dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          repository: greenautarky/${{ inputs.addon_repo }}
+          token: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
+
+      - name: Guard — is the token present?
+        id: guard
+        env:
+          PAT: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
+        run: |
+          if [ -z "${PAT:-}" ]; then
+            # Hard error, not a warning. Calling this workflow IS the statement
+            # that the store should be synced; a missing token means it silently
+            # was not, and the job then reports success for doing nothing. That
+            # is exactly what happened on 2026-08-19: the secret had been
+            # overwritten with an empty value, the guard skipped every step, and
+            # the run went green while the store stayed three versions behind.
+            echo "::error::DOWNSTREAM_SYNC_PAT is empty or unset. This workflow was called, so the store is expected to be synced — refusing to report success for a no-op. Set the secret in the calling repository."
+            exit 1
+          fi
+          # A pasted secret routinely carries a trailing newline, and git then
+          # fails with "credential url cannot be parsed" — a message that names
+          # neither the secret nor the newline, and cost an hour to trace once.
+          # Say it here, in one line, and carry on with the trimmed value.
+          clean="$(printf '%s' "$PAT" | tr -d '[:space:]')"
+          if [ "${#clean}" -ne "${#PAT}" ]; then
+            echo "::warning::DOWNSTREAM_SYNC_PAT contains whitespace (probably a trailing newline from pasting). Using the trimmed value — re-paste it without the newline to silence this."
+          fi
+          if [ -z "$clean" ]; then
+            echo "::error::DOWNSTREAM_SYNC_PAT is only whitespace"
+            exit 1
+          fi
+          echo "::add-mask::$clean"
+          echo "pat=$clean" >> "$GITHUB_OUTPUT"
+          echo "enabled=true" >> "$GITHUB_OUTPUT" 
+
+      - name: Install PyYAML
+        if: steps.guard.outputs.enabled == 'true'
+        run: pip install --quiet "PyYAML>=6,<7"
+
+      - name: Read add-on version
+        if: steps.guard.outputs.enabled == 'true'
+        id: ver
+        run: |
+          set -euo pipefail
+          f="${{ inputs.addon_dir }}/config.yaml"
+          ver=$(awk 'BEGIN{IGNORECASE=1}
+            /^[[:space:]]*version[[:space:]]*:/{
+              sub(/^.*version[[:space:]]*:[[:space:]]*/,"");
+              sub(/[[:space:]]*#.*/,""); gsub(/"/,""); gsub(/[[:space:]]/,"");
+              print; exit
+            }' "$f")
+          [ -n "${ver:-}" ] || { echo "::error::could not read version from $f"; exit 1; }
+          echo "value=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Render the store entry (no push yet)
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          PAT: ${{ steps.guard.outputs.pat }}
+          STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
+          SLUG: ${{ inputs.addon_slug }}
+          IMAGE_NS: ${{ inputs.image_ns }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${PAT}@github.com/greenautarky/vibe_addons.git" .store
+          test -d ".store/${STORE_DIR}" || { echo "::error::vibe_addons/${STORE_DIR} does not exist — pass the right store_dir"; exit 1; }
+          cp ".store/${STORE_DIR}/config.yaml" /tmp/store-before.yaml
+          python3 .store/scripts/render_store_config.py \
+            "${{ inputs.addon_dir }}/config.yaml" \
+            --image "${IMAGE_NS}/${SLUG}-{arch}" \
+            --name "${SLUG}" \
+            --source-repo "${{ inputs.addon_repo || github.event.repository.name }}" \
+            > /tmp/store-rendered.yaml
+
+      # The automation may ADD and CHANGE keys. It may never DELETE one that the
+      # store publishes today: `image:` alone decides whether the Supervisor can
+      # install the add-on at all, and a source that simply never had a key would
+      # otherwise silently strip it fleet-wide. Checked BEFORE the push, because a
+      # proof that runs after the damage is not a gate.
+      - name: Refuse to drop keys the store publishes today
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import sys, yaml
+          before = yaml.safe_load(open("/tmp/store-before.yaml")) or {}
+          after = yaml.safe_load(open("/tmp/store-rendered.yaml")) or {}
+          if not after:
+              print("::error::rendered store entry is empty — refusing to push")
+              sys.exit(1)
+          removed = sorted(set(before) - set(after))
+          if removed:
+              print("::error::the render would DELETE keys the store publishes today: "
+                    + ", ".join(removed))
+              print("::error::reconcile the source config first — automation must not strip "
+                    "published keys")
+              sys.exit(1)
+          print("no keys would be removed (%d -> %d)" % (len(before), len(after)))
+          EOF
+
+      - name: Push the store entry
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          VER: ${{ steps.ver.outputs.value }}
+          STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
+          SLUG: ${{ inputs.addon_slug }}
+        run: |
+          set -euo pipefail
+          cp /tmp/store-rendered.yaml ".store/${STORE_DIR}/config.yaml"
+          cd .store
+          if git diff --quiet "${STORE_DIR}/config.yaml"; then
+            echo "store already in sync at ${VER} — nothing to push"
+          else
+            git config user.name "ga-ci-bot"
+            git config user.email "ci@greenautarky.com"
+            git commit -am "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${{ inputs.addon_repo || github.event.repository.name }} CI)"
+            git push origin HEAD:main
+            echo "vibe_addons/${STORE_DIR} synced -> ${VER}"
+          fi
+
+      - name: Prove the sync landed
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
+        run: |
+          set -euo pipefail
+          python3 .store/scripts/verify_store_sync.py \
+            "${{ inputs.addon_dir }}/config.yaml" \
+            ".store/${STORE_DIR}/config.yaml" \
+            --image "${{ inputs.image_ns }}/${{ inputs.addon_slug }}-{arch}" \
+            --name "${{ inputs.addon_slug }}" \
+            --source-repo "${{ inputs.addon_repo || github.event.repository.name }}"
+
+      # The addon-images.json pin PR used to live here and needed write access to
+      # ha-operating-system. It moved INTO that repo (pin-addon-images.yaml): the
+      # OS reads the public store itself and opens its own PR with its own
+      # GITHUB_TOKEN. One cross-repo credential fewer, and the pin no longer
+      # depends on an add-on repo happening to build.
