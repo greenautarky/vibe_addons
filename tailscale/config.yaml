@@ -1,4 +1,11 @@
 ---
+# Published store entry for the GA add-on.
+# Synced from the source repo greenautarky/ga_tailscale by CI — DO NOT EDIT BY HAND.
+# The only delta vs. the source config is the `image:` key: this entry is
+# install-by-pull (the multi-arch image is built by the source repo's CI and
+# published to GHCR), so the source repo can stay private.
+# `version` stays in lock-step with the GHCR image tag and with the OS bake list
+# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: ga_Tailscale
 version: "0.27.3"
 slug: ga_tailscale
