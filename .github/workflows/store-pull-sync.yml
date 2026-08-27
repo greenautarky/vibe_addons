@@ -1,0 +1,147 @@
+---
+name: store-pull-sync
+
+# THE STORE PULLS WHAT MOVED, INSTEAD OF EVERY PRODUCER PUSHING TO IT.
+#
+# addon-store-lockstep is called BY an add-on's publish, so the push uses the
+# caller's credential. That works for a private add-on repo, which can hold a
+# write-capable PAT. It cannot work for a PUBLIC one: putting a token that can
+# write to this repository into a public repo's secrets is a blast radius
+# nobody asked for, so ga_influxdbv1's publish has failed at the token guard
+# every time and the store was synced by hand three times on 2026-08-26.
+#
+# Here the direction is reversed. This repository owns the store entry, so it
+# reads each add-on's source config and writes its own file with its own
+# GITHUB_TOKEN. A public source needs no credential at all; a private one falls
+# back to the PAT, which lives HERE rather than in every producer.
+#
+# Same inversion ha-operating-system already made for the bake pin: "the OS
+# reads the public store itself... one cross-repo credential fewer, and the pin
+# no longer depends on some add-on repo happening to build."
+#
+# PROPOSES BY PUSHING TO A BRANCH AND OPENING A PR, never straight to main: a
+# store entry is what every device installs from, and the version it names must
+# be one that exists on the registry. The pin-drift check on the PR is what
+# proves that.
+
+"on":
+  schedule:
+    - cron: "13 */2 * * *"
+  workflow_dispatch:
+    inputs:
+      addon:
+        description: "Sync only this store directory (blank = all)"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  pull-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet "PyYAML>=6,<7"
+
+      - name: Render each add-on from its source and report the drift
+        id: render
+        env:
+          GH_TOKEN: ${{ secrets.DOWNSTREAM_SYNC_PAT || github.token }}
+          ONLY: ${{ inputs.addon }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+
+          # store_dir : source_repo : source_dir : image slug
+          MAP="
+          ga_default_addon:ga_default_addon:default_addon:ga_default_addon
+          ga_hmvapp_addon:ga_hmvapp_addon:hmvapp_addon:ga_hmvapp_addon
+          ga_manager:ga_manager:ga_manager:ga_manager
+          influxdb:influxDBv1:influxdb:ga_influxdbv1
+          tailscale:ga_tailscale:tailscale:ga_tailscale
+          "
+
+          inspected=0
+          changed=""
+          unreadable=""
+
+          for row in ${MAP}; do
+            store_dir="${row%%:*}"; rest="${row#*:}"
+            src_repo="${rest%%:*}";  rest="${rest#*:}"
+            src_dir="${rest%%:*}"
+            slug="${rest##*:}"
+
+            [ -n "${ONLY}" ] && [ "${ONLY}" != "${store_dir}" ] && continue
+
+            path="${src_dir}/config.yaml"
+            api="repos/${OWNER}/${src_repo}/contents/${path}"
+            if ! gh api "${api}" --jq '.content' 2>/dev/null \
+                 | base64 -d > "/tmp/src-${store_dir}.yaml"; then
+              unreadable="${unreadable} ${src_repo}"
+              continue
+            fi
+            inspected=$((inspected + 1))
+
+            src="/tmp/src-${store_dir}.yaml"
+            python3 scripts/render_store_config.py "${src}" \
+              --image "ghcr.io/${OWNER}/${slug}-{arch}" \
+              --source-repo "${src_repo}" > "/tmp/rendered-${store_dir}.yaml"
+
+            cur="${store_dir}/config.yaml"
+            new="/tmp/rendered-${store_dir}.yaml"
+            if ! diff -q "${cur}" "${new}" >/dev/null 2>&1; then
+              cp "${new}" "${cur}"
+              changed="${changed} ${store_dir}"
+              echo "drift: ${store_dir} <- ${src_repo}"
+            fi
+          done
+
+          # Coverage, not exit code: a sweep that read nothing is not
+          # "in sync" — it is a sweep that did not happen.
+          if [ "${inspected}" -eq 0 ]; then
+            echo "::error::inspected zero add-ons — nothing was compared"
+            exit 1
+          fi
+          echo "inspected ${inspected} add-on(s)"
+          if [ -n "${unreadable}" ]; then
+            echo "::warning::source config unreadable for:${unreadable}"
+            echo "::warning::those add-ons were NOT compared this run"
+          fi
+          echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR for what moved
+        if: steps.render.outputs.changed != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGED: ${{ steps.render.outputs.changed }}
+        run: |
+          set -euo pipefail
+          br="ci/store-pull-$(date -u +%Y%m%d%H%M)"
+          git config user.name "ga-ci-bot"
+          git config user.email "ci@greenautarky.com"
+          git checkout -b "${br}"
+          git commit -am "chore(store): pull the source config for${CHANGED}"
+          git push origin "${br}"
+          {
+            echo "Opened by store-pull-sync: this repository read each"
+            echo "add-on's source config and rendered its own store entry."
+            echo "No producer needed a credential for this repository."
+            echo ""
+            echo "Changed:${CHANGED}"
+            echo ""
+            echo "Merge only once pin-drift is green. A store entry names"
+            echo "the version every device installs; if that tag is not on"
+            echo "the registry, the install fails on every device."
+          } > /tmp/pr-body.md
+          gh pr create --base main --head "${br}" \
+            --title "chore(store): pull the source config for${CHANGED}" \
+            --body-file /tmp/pr-body.md
