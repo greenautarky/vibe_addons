@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: 1.6.1
+version: 2.0.0
 slug: "ga_default_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
@@ -49,13 +49,12 @@ options:
   LONGITUDE: "6.60159"
   CITY: Grevenbroich
   COUNTRY: Germany
-  TB_URL: https://thingsboard.greenautarky.com
-  TB_DEVICE_TOKEN: x
-  # Transitional: legacy devices that have not yet migrated off the old UI
-  # still push aggregated data to the cloud DB. Every other system leaves
-  # this false. Turning it on ALSO requires the five DB_* options below;
-  # neither half works alone. Remove option + code when the migration ends.
-  legacy_cloud_push: false
+  # ADR-0020: this add-on holds no cloud DB credential. Aggregated batches go
+  # to ga_manager's LOCAL ingest endpoint, which is the sole cloud writer.
+  # Both must be delivered before anything is sent; until then every pipeline
+  # run says so at ERROR rather than falling quiet.
+  GM_INGEST_URL: ""
+  GM_INGEST_TOKEN: ""
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
@@ -93,12 +92,6 @@ schema:
   LONGITUDE: str
   CITY: str
   COUNTRY: str
-  TB_URL: str
-  TB_DEVICE_TOKEN: str
-  DB_HOST: str?
-  DB_NAME: str?
-  DB_USERNAME: str?
-  DB_PASSWORD: str?
-  DB_PORT: int?
-  legacy_cloud_push: bool
+  GM_INGEST_URL: str?
+  GM_INGEST_TOKEN: str?
 init: false
