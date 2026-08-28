@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.142.0"
+version: "0.143.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -105,6 +105,19 @@ options:
       ssh: true
       influxdb: true
       mqtt: true
+  # ADR-0017 cloud data plane. Every top-level schema key needs a default
+  # here (test_options_and_schema_agree_on_their_keys — a key absent from
+  # options is the same "add-on will not load" class as an unknown type).
+  # The defaults are the INERT state: flag off, empty connection values,
+  # empty allowlist. Real values (per-device credential minted by the
+  # fleet-manager, host, tables, flag) arrive via the fm addon-config push.
+  cloud_push_enabled: false
+  cloud_db_host: ""
+  cloud_db_name: ""
+  cloud_db_user: ""
+  cloud_db_password: ""
+  cloud_db_port: 5432
+  cloud_tables: []
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
   health_check:
@@ -142,3 +155,17 @@ schema:
       ssh: bool
       influxdb: bool
       mqtt: bool
+  # ADR-0017 cloud data plane. Types restricted to shapes already proven in
+  # this file (bool/str/int/list-of-match): an unknown schema type makes the
+  # Supervisor reject the WHOLE config.yaml and drop the add-on from the
+  # store (measured on K0 2026-08-19 — see test_addon_schema_valid.py).
+  # `cloud_db_password` is `str` for the same reason: the `password` type is
+  # not used anywhere else in this file, so it stays out until proven.
+  cloud_push_enabled: bool
+  cloud_db_host: str
+  cloud_db_name: str
+  cloud_db_user: str
+  cloud_db_password: str
+  cloud_db_port: int(1,65535)
+  cloud_tables:
+    - "match(^[a-z_][a-z0-9_]*$)"
