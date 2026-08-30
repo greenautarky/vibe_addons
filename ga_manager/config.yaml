@@ -1,11 +1,11 @@
 ---
-# Published store entry for the ga_manager add-on.
-# Synced from the source repo greenautarky/ga_manager by CI — DO NOT EDIT BY HAND.
-# The only delta vs. the source config is the `image:` key: this entry is
-# install-by-pull (the multi-arch image is built by the source repo's CI and
-# published to GHCR), so the source repo can stay private.
-# `version` stays in lock-step with the GHCR image tag and with the OS bake list
-# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+# Published store entry for the GA Manager add-on.
+# Synced from the source repo greenautarky/ga_manager (ga_manager/config.yaml).
+# The only delta vs. the source config is the `image:` key below: this entry
+# is install-by-pull (the multi-arch image is built by the source repo's CI
+# and published to GHCR), so the source repo can stay private.
+# Keep `version` in lock-step with the GHCR image tag and with the OS bake
+# list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
 version: "0.144.0"
 slug: "ga_manager"
