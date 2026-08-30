@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: 2.0.0
+version: 2.0.1
 slug: "ga_default_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
