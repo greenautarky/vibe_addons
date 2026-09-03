@@ -1,4 +1,4 @@
-# Published store entry for the GA add-on.
+# Published store entry for the ga_hmvapp_addon add-on.
 # Synced from the source repo greenautarky/ga_hmvapp_addon by CI — DO NOT EDIT BY HAND.
 # The only delta vs. the source config is the `image:` key: this entry is
 # install-by-pull (the multi-arch image is built by the source repo's CI and
