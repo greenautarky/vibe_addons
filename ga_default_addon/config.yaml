@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: 2.0.2
+version: 2.1.0
 slug: "ga_default_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
@@ -15,6 +15,13 @@ description: "GA Home Assistant add-on running the default VOS functions"
 startup: services
 map:
   - share:rw
+  # 2.1.0: read-only view of HA's config dir (mounted at /homeassistant) for
+  # .storage/core.uuid — the HA instance id every cloud batch is keyed on
+  # (utils/device_identity).
+  # ga_hmvapp_addon used to read the same file and publish it into InfluxDB;
+  # ADR-0021 §3 keeps that add-on as the closed decision engine but takes the
+  # device identity away from it, so this one reads the file itself.
+  - homeassistant_config:ro
 boot: auto
 arch:
   - aarch64
@@ -94,4 +101,9 @@ schema:
   COUNTRY: str
   GM_INGEST_URL: str?
   GM_INGEST_TOKEN: str?
+  # 2.1.0: optional override for the device id (must be the HA instance uuid —
+  # the cloud keys on it). No default: absent, the add-on reads core.uuid via
+  # the homeassistant_config map above. Declared so a delivered value survives
+  # the Supervisor's schema validation instead of being dropped silently.
+  HA_UUID: str?
 init: false
