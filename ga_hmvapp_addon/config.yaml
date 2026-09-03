@@ -1,4 +1,4 @@
-# Published store entry for the ga_hmvapp_addon add-on.
+# Published store entry for the GA add-on.
 # Synced from the source repo greenautarky/ga_hmvapp_addon by CI — DO NOT EDIT BY HAND.
 # The only delta vs. the source config is the `image:` key: this entry is
 # install-by-pull (the multi-arch image is built by the source repo's CI and
@@ -6,12 +6,12 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA HMVapp Addon"
-version: 1.7.1
+version: 2.0.0
 slug: "ga_hmvapp_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_hmvapp_addon-{arch}
 url: https://github.com/greenautarky/ga_hmvapp_addon
-description: "GA Home Assistant add-on running the heating management model"
+description: "GA heating decision engine — proposes valve offsets through the heating decision contract (ADR-0021 §3)"
 startup: services
 map:
   - share:rw
@@ -24,6 +24,11 @@ volumes:
   /influxdb_data: share
 services:
   - mqtt:need
+# Contract v1 (ADR-0021 §3): the engine reads room and valve state from Home
+# Assistant through the Supervisor's Core API proxy — never from an InfluxDB
+# history and never by asking the valve over MQTT. Without this flag every
+# state read answers 401 and the engine decides nothing.
+homeassistant_api: true
 options:
   INFLUXDB_HOST: 99f1cad4-ga-influxdbv1
   INFLUXDB_PORT: 8086
@@ -41,7 +46,9 @@ options:
   INFLUXDB_DATABASE: ga_homeassistant_db
   INFLUXDB_GD_DATABASE: gd_data
   LOCAL_TZ: Europe/Berlin
-  CHECK_INTERVAL: 10
+  # Decision cycle in seconds (contract v1: 60; a decision stays valid for two
+  # cycles, so one missed cycle never flips a valve to the fallback formula).
+  CHECK_INTERVAL: 60
   GD_DIRECTORY: /data/gd_data
 schema:
   INFLUXDB_HOST: str
