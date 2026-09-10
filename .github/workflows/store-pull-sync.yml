@@ -92,8 +92,17 @@ jobs:
             inspected=$((inspected + 1))
 
             src="/tmp/src-${store_dir}.yaml"
+            # --name is NOT optional here, even though the renderer defaults it.
+            # addon-store-lockstep.yml passes --name "${SLUG}"; this workflow
+            # renders the SAME files. Leaving it out made the two render
+            # different headers for one file, so whichever ran last was "drift"
+            # to the other: this sweep opened a fresh PR every few hours from
+            # 2026-09-09, four of them, none mergeable-by-nobody, each one
+            # proposing to replace a slug-named header with the meaningless
+            # default. Two sources for one truth must agree by construction.
             python3 scripts/render_store_config.py "${src}" \
               --image "ghcr.io/${OWNER}/${slug}-{arch}" \
+              --name "${slug}" \
               --source-repo "${src_repo}" > "/tmp/rendered-${store_dir}.yaml"
 
             cur="${store_dir}/config.yaml"

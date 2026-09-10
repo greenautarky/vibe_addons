@@ -83,6 +83,57 @@ def main() -> int:
     else:
         print("  idempotence: render(render(x)) == render(x)")
 
+    # Every workflow that renders a store config must pass --name.
+    #
+    # The renderer defaults --name to "GA", which is a value no store file
+    # carries. addon-store-lockstep.yml passed --name; store-pull-sync.yml did
+    # not, so the two rendered DIFFERENT headers for the same file and each
+    # read the other's output as drift. The pull sweep opened a fresh PR every
+    # few hours from 2026-09-09 — four of them, each proposing to replace a
+    # slug-named header with the meaningless default, none of them a real
+    # change to the add-on.
+    #
+    # A static check, deliberately: these workflows run on a schedule and on
+    # dispatch, never on a pull request, so no ordinary CI run exercises them.
+    # A path that only runs on the event it reports is unverified unless
+    # something reads it without running it.
+    #
+    # Fails rather than skips when it finds no call sites: "nothing to check"
+    # and "could not look" must never produce the same green.
+    wf_dir = ROOT / ".github" / "workflows"
+    call_sites = []
+    for wf in sorted(wf_dir.glob("*.y*ml")):
+        text = wf.read_text(encoding="utf-8")
+        if "render_store_config.py" not in text:
+            continue
+        for block in text.split("render_store_config.py")[1:]:
+            # the invocation ends at the first line that is not a continuation
+            invocation, cont = [], True
+            for line in block.splitlines():
+                if not cont:
+                    break
+                invocation.append(line)
+                cont = line.rstrip().endswith("\\")
+            call_sites.append((wf.name, "\n".join(invocation)))
+
+    checked += 1
+    if not call_sites:
+        failures.append(
+            "found no render_store_config.py call site in any workflow — the "
+            "check could not run, which is NOT a clean result"
+        )
+    else:
+        missing = [wf for wf, inv in call_sites if "--name" not in inv]
+        if missing:
+            failures.append(
+                "render_store_config.py called without --name in: "
+                + ", ".join(sorted(set(missing)))
+                + " — it would render the \"GA\" default and fight whichever "
+                "workflow passes a real name"
+            )
+        else:
+            print(f"  --name passed at all {len(call_sites)} render call site(s)")
+
     if checked == 0:
         print("FATAL: zero fixtures inspected — a gate that ran over nothing proves nothing")
         return 1
