@@ -18,6 +18,10 @@ on:
       - "tests/resolve_addon_base/**"
       - "tests/assert_base_matches/**"
       - ".github/workflows/store-sync-gate.yaml"
+      # the gate now also reads these two, because they are what it guards:
+      # a call site that stops passing --name must re-run the gate that says so.
+      - ".github/workflows/store-pull-sync.yml"
+      - ".github/workflows/addon-store-lockstep.yml"
   pull_request:
     paths:
       - "scripts/**"
@@ -25,6 +29,10 @@ on:
       - "tests/resolve_addon_base/**"
       - "tests/assert_base_matches/**"
       - ".github/workflows/store-sync-gate.yaml"
+      # the gate now also reads these two, because they are what it guards:
+      # a call site that stops passing --name must re-run the gate that says so.
+      - ".github/workflows/store-pull-sync.yml"
+      - ".github/workflows/addon-store-lockstep.yml"
   workflow_dispatch:
 
 permissions:
