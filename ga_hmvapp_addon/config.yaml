@@ -1,50 +1,78 @@
----
-# Published store entry for the GA HMVapp Addon (heating management).
-# Synced from the source repo greenautarky/ga_hmvapp_addon
-# (hmvapp_addon/config.yaml).
-# The key delta vs. the source config: this entry is install-by-pull —
-# the multi-arch image is built by the source repo's CI and published
-# to GHCR as a PRIVATE package, so the source repo can stay private.
-# Devices need a `ghcr.io` credential in Supervisor's /docker/registries
-# to pull this image; the credential is delivered by ga-fleet-manager
-# (see ga-ihost-docs/ADDON-IMAGE-DELIVERY.md §4 Phase 1).
-# Keep `version` in lock-step with the GHCR image tag and with the OS
-# bake list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+# Published store entry for the ga_hmvapp_addon add-on.
+# Synced from the source repo greenautarky/ga_hmvapp_addon by CI — DO NOT EDIT BY HAND.
+# The only delta vs. the source config is the `image:` key: this entry is
+# install-by-pull (the multi-arch image is built by the source repo's CI and
+# published to GHCR), so the source repo can stay private.
+# `version` stays in lock-step with the GHCR image tag and with the OS bake list
+# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA HMVapp Addon"
-version: "1.2.0"
+version: 2.2.0
 slug: "ga_hmvapp_addon"
-description: "GA Home Assistant add-on running the heating management model"
-url: https://github.com/greenautarky/ga_hmvapp_addon
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_hmvapp_addon-{arch}
+url: https://github.com/greenautarky/ga_hmvapp_addon
+description: "GA heating decision engine — proposes valve offsets through the heating decision contract (ADR-0021 §3)"
 startup: services
+map:
+  - share:rw
 boot: auto
-init: false
 arch:
   - aarch64
   - amd64
   - armv7
-services:
-  - mqtt:need
-map:
-  - share:rw
 volumes:
   /influxdb_data: share
+services:
+  - mqtt:need
+# Contract v1 (ADR-0021 §3): the engine reads room and valve state from Home
+# Assistant through the Supervisor's Core API proxy — never from an InfluxDB
+# history and never by asking the valve over MQTT. Without this flag every
+# state read answers 401 and the engine decides nothing.
+homeassistant_api: true
 options:
   INFLUXDB_HOST: 99f1cad4-ga-influxdbv1
   INFLUXDB_PORT: 8086
+  # Inert default. ga_manager's local-influx-creds-sync overwrites BOTH this
+  # and the password together once the influx add-on runs with per-user
+  # secrets, so this value only ever applies before delivery — where the
+  # add-on cannot authenticate at all either way.
   INFLUXDB_USERNAME: ga_influx_admin
+  # Empty on purpose, and it MUST stay a declared option. The Supervisor
+  # validates options against `schema:` and silently DROPS anything absent
+  # from it — so without this entry a delivered credential disappears without
+  # a log line and every write answers 401, while the InfluxDB client still
+  # reports "Write successful" for the empty batches it is left with.
+  INFLUXDB_PASSWORD: ""
   INFLUXDB_DATABASE: ga_homeassistant_db
   INFLUXDB_GD_DATABASE: gd_data
   LOCAL_TZ: Europe/Berlin
-  CHECK_INTERVAL: 10
+  # Decision cycle in seconds (contract v1: 60; a decision stays valid for two
+  # cycles, so one missed cycle never flips a valve to the fallback formula).
+  CHECK_INTERVAL: 60
   GD_DIRECTORY: /data/gd_data
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
   INFLUXDB_USERNAME: str
+  # `str?` = optional, so an existing install without the key keeps validating.
+  # This is the socket ga_manager's delivery worker plugs into.
+  INFLUXDB_PASSWORD: str?
   INFLUXDB_DATABASE: str
   INFLUXDB_GD_DATABASE: str
+  # Mapped by env_loader and read by the add-on, but undeclared before 1.5.0 —
+  # so the Supervisor dropped them and MQTT_HOST was never anything but None.
+  # Optional, with NO default in `options:`, which leaves runtime behaviour
+  # bit-for-bit unchanged and merely makes delivery possible. NB: this add-on
+  # declares `services: mqtt:need` but no code reads the Supervisor's mqtt
+  # service.
+  MQTT_HOST: str?
+  MQTT_PORT: int?
+  MQTT_USERNAME: str?
+  MQTT_PASSWORD: str?
   LOCAL_TZ: str
   CHECK_INTERVAL: int
   GD_DIRECTORY: str
+init: false
+#hassio_api: true
+#hassio_role: default
+

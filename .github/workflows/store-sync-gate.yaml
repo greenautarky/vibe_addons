@@ -1,0 +1,64 @@
+name: store-sync-gate
+
+# The gate that keeps this store repo equal to what each add-on's source repo
+# renders. It ships with fixtures and they run on every change, because a red
+# proof pasted into a review is evidence once, about one version, and nothing
+# re-checks it when the gate is edited a month later.
+#
+# Both sets are mandatory: must_fail (inputs the gate has to reject) and
+# must_pass (inputs it must not). The suite imports the LIVE scripts from
+# scripts/ — never a copy — and fails rather than skips if it cannot find them.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/**"
+      - "tests/store_sync_gate/**"
+      - "tests/resolve_addon_base/**"
+      - "tests/assert_base_matches/**"
+      - ".github/workflows/store-sync-gate.yaml"
+      # the gate now also reads these two, because they are what it guards:
+      # a call site that stops passing --name must re-run the gate that says so.
+      - ".github/workflows/store-pull-sync.yml"
+      - ".github/workflows/addon-store-lockstep.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "tests/store_sync_gate/**"
+      - "tests/resolve_addon_base/**"
+      - "tests/assert_base_matches/**"
+      - ".github/workflows/store-sync-gate.yaml"
+      # the gate now also reads these two, because they are what it guards:
+      # a call site that stops passing --name must re-run the gate that says so.
+      - ".github/workflows/store-pull-sync.yml"
+      - ".github/workflows/addon-store-lockstep.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: pip install --quiet "PyYAML>=6,<7"
+      - name: Gate fixtures (must_fail + must_pass + idempotence)
+        run: python3 tests/store_sync_gate/run_fixtures.py
+      # Same contract, different subject: the base resolver decides which image
+      # an add-on is built FROM, so a silent fallback there pins an add-on back
+      # onto a frozen base while the merge looks green.
+      - name: Base-resolver fixtures (must_fail + must_pass)
+        run: python3 tests/resolve_addon_base/run_fixtures.py
+      # The other half of the same defect. The resolver makes the pipeline READ
+      # the declaration; this one proves the image that came out actually
+      # derives from it. Pure comparison logic only — no docker, no pulls: the
+      # docker half reads bytes, this half decides, and it is the deciding that
+      # has to be right.
+      - name: Declared-vs-built base fixtures (must_fail + must_pass)
+        run: python3 tests/assert_base_matches/run_fixtures.py

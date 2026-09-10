@@ -1,39 +1,47 @@
----
-# Published store entry for the GA Default Addon (VOS functions).
-# Synced from the source repo greenautarky/ga_default_addon
-# (default_addon/config.yaml).
-# The key delta vs. the source config: this entry is install-by-pull —
-# the multi-arch image is built by the source repo's CI and published
-# to GHCR as a PRIVATE package, so the source repo can stay private.
-# Devices need a `ghcr.io` credential in Supervisor's /docker/registries
-# to pull this image; the credential is delivered by ga-fleet-manager
-# (see ga-ihost-docs/ADDON-IMAGE-DELIVERY.md §4 Phase 1).
-# Keep `version` in lock-step with the GHCR image tag and with the OS
-# bake list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+# Published store entry for the ga_default_addon add-on.
+# Synced from the source repo greenautarky/ga_default_addon by CI — DO NOT EDIT BY HAND.
+# The only delta vs. the source config is the `image:` key: this entry is
+# install-by-pull (the multi-arch image is built by the source repo's CI and
+# published to GHCR), so the source repo can stay private.
+# `version` stays in lock-step with the GHCR image tag and with the OS bake list
+# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: "1.2.0"
+version: 2.1.0
 slug: "ga_default_addon"
-description: "GA Home Assistant add-on running the default VOS functions"
-url: https://github.com/greenautarky/ga_default_addon
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
+url: https://github.com/greenautarky/ga_default_addon
+description: "GA Home Assistant add-on running the default VOS functions"
 startup: services
+map:
+  - share:rw
+  # 2.1.0: read-only view of HA's config dir (mounted at /homeassistant) for
+  # .storage/core.uuid — the HA instance id every cloud batch is keyed on
+  # (utils/device_identity).
+  # ga_hmvapp_addon used to read the same file and publish it into InfluxDB;
+  # ADR-0021 §3 keeps that add-on as the closed decision engine but takes the
+  # device identity away from it, so this one reads the file itself.
+  - homeassistant_config:ro
 boot: auto
-init: false
 arch:
   - aarch64
   - amd64
   - armv7
-services:
-  - mqtt:need
-map:
-  - share:rw
 volumes:
   /influxdb_data: share
+services:
+  - mqtt:need
 options:
   INFLUXDB_HOST: 99f1cad4-ga-influxdbv1
   INFLUXDB_PORT: 8086
   INFLUXDB_USERNAME: ga_ha_influx_user
+  # Empty on purpose, and it MUST stay a declared option. The Supervisor
+  # validates options against `schema:` and silently DROPS anything absent
+  # from it — so without this entry a delivered credential disappears without
+  # a log line, the add-on connects with password=None, and every write
+  # answers 401 while the client still reports "Write successful" (it only
+  # ever wrote empty batches).
+  INFLUXDB_PASSWORD: ""
   INFLUXDB_DATABASE: ga_homeassistant_db
   INFLUXDB_GD_DATABASE: gd_data
   INFLUXDB_PD_DATABASE: pd_data
@@ -48,15 +56,38 @@ options:
   LONGITUDE: "6.60159"
   CITY: Grevenbroich
   COUNTRY: Germany
-  TB_URL: https://thingsboard.greenautarky.com
-  TB_DEVICE_TOKEN: x
+  # ADR-0020: this add-on holds no cloud DB credential. Aggregated batches go
+  # to ga_manager's LOCAL ingest endpoint, which is the sole cloud writer.
+  # Both must be delivered before anything is sent; until then every pipeline
+  # run says so at ERROR rather than falling quiet.
+  GM_INGEST_URL: ""
+  GM_INGEST_TOKEN: ""
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
   INFLUXDB_USERNAME: str
+  # `str?` = optional, so an existing install that has no password key keeps
+  # validating. This is the socket ga_manager's local-influx-creds-sync worker
+  # plugs into (the ga_manager delivery worker); until it delivers, the value stays empty and
+  # env_loader unsets it, which is exactly today's behaviour.
+  INFLUXDB_PASSWORD: str?
   INFLUXDB_DATABASE: str
   INFLUXDB_GD_DATABASE: str
   INFLUXDB_PD_DATABASE: str
+  # Mapped by env_loader and read by radiator_data / log_sensor_availability,
+  # but undeclared before 1.5.0 — so the Supervisor dropped them and MQTT_HOST
+  # was never anything but None. Declared optional with NO default in
+  # `options:`, which leaves today's behaviour bit-for-bit unchanged (the keys
+  # are absent from options.json either way) and merely makes delivery
+  # possible. NB: the add-on declares `services: mqtt:need` but no code reads
+  # the Supervisor's mqtt service — the service is read since 1.6.0.
+  MQTT_HOST: str?
+  MQTT_PORT: int?
+  MQTT_USERNAME: str?
+  MQTT_PASSWORD: str?
+  # Same class: heating_forecast reads it, env_loader maps it, nothing could
+  # ever set it, so PRESETBACK was permanently the default.
+  FORECAST_PRESETBACK: str?
   LOCAL_TZ: str
   CHECK_INTERVAL: int
   GD_DIRECTORY: str
@@ -68,5 +99,11 @@ schema:
   LONGITUDE: str
   CITY: str
   COUNTRY: str
-  TB_URL: str
-  TB_DEVICE_TOKEN: str
+  GM_INGEST_URL: str?
+  GM_INGEST_TOKEN: str?
+  # 2.1.0: optional override for the device id (must be the HA instance uuid —
+  # the cloud keys on it). No default: absent, the add-on reads core.uuid via
+  # the homeassistant_config map above. Declared so a delivered value survives
+  # the Supervisor's schema validation instead of being dropped silently.
+  HA_UUID: str?
+init: false

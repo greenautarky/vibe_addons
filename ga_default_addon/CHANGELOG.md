@@ -4,6 +4,27 @@ This is the addon-store sync file for `ga_default_addon`. Each entry
 mirrors a release from the (private) source repo
 [greenautarky/ga_default_addon](https://github.com/greenautarky/ga_default_addon).
 
+## 1.4.0 — Cloud push becomes an explicit, per-device opt-in (2026-08-24)
+
+- New add-on option `legacy_cloud_push` (bool, **default `false`**), plus the
+  matching `schema` key. This is the reason for the store bump: an option only
+  reaches a device through this entry.
+- The add-on pushes aggregated data to the central cloud database **only** when
+  `legacy_cloud_push` is `true` **and** all four credential options
+  (`DB_HOST`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD`) are set. Since 1.3.2 the
+  credentials were delivered as options rather than baked into the image, which
+  made "does this device push?" depend on configuration nobody had decided;
+  1.4.0 makes it a decision.
+- The path is **transitional** — it serves devices that have not yet migrated
+  off the old UI — and is scheduled for removal. Current systems need no action:
+  the default is off.
+- The add-on now logs exactly one line per run stating which of three states it
+  is in (disabled by policy / enabled on the legacy path / turned on but
+  misconfigured), so a silent non-push is no longer possible.
+
+Nothing else in this entry changes: no option value, port, map, arch or image
+reference is touched.
+
 ## 1.1.21 — Initial publish to vibe_addons (2026-06-01)
 
 - First public store entry for the GA Default Addon (VOS functions).
