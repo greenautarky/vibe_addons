@@ -1,0 +1,47 @@
+# Published store entry for the GA Watch Telemetry add-on.
+# Synced from the source repo greenautarky/ga_watch_telemetry by CI — DO NOT EDIT BY HAND.
+# The only delta vs. the source config is the `image:` key: this entry is
+# install-by-pull (the multi-arch image is built by the source repo's CI and
+# published to GHCR), so the source repo can stay private.
+# `version` stays in lock-step with the GHCR image tag and with the OS bake list
+# (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+name: "GA Watch Telemetry"
+version: "0.1.0"
+slug: "ga_watch_telemetry"
+codenotary: notary@greenautarky.com
+image: ghcr.io/greenautarky/ga_watch_telemetry-{arch}
+url: https://github.com/greenautarky/ga_watch_telemetry
+description: "Phone-free Amazfit Active 2 telemetry — reads the watch over BLE from the KIBU and publishes to Home Assistant over MQTT"
+startup: services
+boot: auto
+# armv7 only: the KIBU/iHost fleet is armv7, and that is the only place this
+# add-on's raw-HCI BLE path is exercised. Add other arches when a target exists.
+arch:
+  - armv7
+# The watch is driven over a raw HCI socket (bumble hci-socket:N), which lives in
+# the host's network namespace and needs the raw-socket capabilities. Without all
+# three the controller is simply invisible to the add-on.
+host_network: true
+privileged:
+  - NET_ADMIN
+  - NET_RAW
+# Supervisor injects the broker host/credentials, so the add-on never carries a
+# hand-placed MQTT login. This is what retires the shared ga_zigbee2mqtt account.
+services:
+  - mqtt:need
+options:
+  # The watch's BLE MAC and its Huami auth key (obtained once via huami-token).
+  # The key is a device pairing secret, so it is a `password` in the schema and
+  # is masked in the Supervisor UI.
+  watch_mac: ""
+  watch_auth_key: ""
+  base_topic: zeppwatch
+  # Initial poll interval. The dashboard's number entity overrides this at
+  # runtime; this value only applies until the first change.
+  poll_interval_minutes: 10
+schema:
+  watch_mac: str
+  watch_auth_key: password
+  base_topic: str
+  poll_interval_minutes: int(1,720)
+init: false
