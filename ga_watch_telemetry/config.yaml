@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Watch Telemetry"
-version: "0.1.5"
+version: "0.1.6"
 slug: "ga_watch_telemetry"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_watch_telemetry-{arch}
