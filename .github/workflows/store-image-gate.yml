@@ -1,17 +1,24 @@
 name: store-image-gate
 
-# Required check on main (ruleset). Runs on EVERY pull request — deliberately
-# no paths filter: a required check that does not run on a PR blocks it forever,
-# and the change that matters most (an `image:` line in an add-on's config) is
-# exactly the one a paths filter would have to list per add-on.
+# Required check on main (ruleset). Store syncs are opened AND merged by
+# automation, so the guard is this check, not a reviewer. What must never
+# happen: a store entry pointing a device at an image outside our registry —
+# a fresh gateway installs from this store at first boot.
 #
-# Why this is the guard and not a reviewer: store syncs are opened AND merged by
-# automation. What must never happen is a store entry pointing a device at an
-# image outside our own registry — a fresh gateway installs from this store at
-# first boot. The gate makes that impossible on any path, whoever holds a token.
+# pull_request_target, on purpose: the workflow AND the gate script always come
+# from main. The pull request's files are only READ as data (YAML/JSON, loaded
+# with safe_load) — nothing from the PR is executed, installed or sourced. With
+# plain `pull_request`, a PR could edit this file or the script and pass itself.
+#
+# For the same reason the gate refuses any PR that touches the gate itself:
+# otherwise one PR weakens the script and the next one walks through it.
+# Changing the gate is a deliberate admin act (lift the required check for
+# that one PR in the ruleset), not something a sync token can do.
+#
+# No paths filter: a required check that does not run on a PR blocks it forever.
 
 on:
-  pull_request:
+  pull_request_target:
   push:
     branches: [main]
   workflow_dispatch:
@@ -21,6 +28,50 @@ permissions:
 
 jobs:
   store-image-namespace:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out main (the gate), never the PR's code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: pip install --quiet "PyYAML>=6,<7"
+      - name: Fetch the PR tree as data
+        env:
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          git fetch -q origin "+refs/pull/${PR}/head:refs/remotes/pr/head"
+          git worktree add -q --detach /tmp/pr-tree refs/remotes/pr/head
+      - name: The PR must not touch the gate
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          touched="$(git diff --name-only "${BASE}...refs/remotes/pr/head" -- \
+            .github/workflows/store-image-gate.yml \
+            scripts/check_store_images.py \
+            tests/store_image_gate/)"
+          if [ -n "$touched" ]; then
+            echo "::error::this PR changes the store image gate itself:"
+            while IFS= read -r f; do echo "::error::  $f"; done <<< "$touched"
+            echo "::error::gate changes need an admin to lift the required check for this PR (ruleset), by design"
+            exit 1
+          fi
+          echo "gate files untouched"
+      - name: Every store entry in the PR pulls from ghcr.io/greenautarky
+        run: python3 scripts/check_store_images.py /tmp/pr-tree
+
+  # Fixtures run on main after every change, and on demand. Not the required
+  # check: on a PR they would run the PR's own copy.
+  fixtures-on-main:
+    if: github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,5 +82,5 @@ jobs:
         run: pip install --quiet "PyYAML>=6,<7"
       - name: Gate fixtures (must_fail + must_pass, against the live gate)
         run: python3 tests/store_image_gate/run_fixtures.py
-      - name: Every store entry pulls from ghcr.io/greenautarky
+      - name: Every store entry on main pulls from ghcr.io/greenautarky
         run: python3 scripts/check_store_images.py
