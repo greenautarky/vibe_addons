@@ -130,7 +130,11 @@ jobs:
       - name: Open a PR for what moved
         if: steps.render.outputs.changed != ''
         env:
-          GH_TOKEN: ${{ github.token }}
+          # The PAT, not GITHUB_TOKEN: a PR opened with GITHUB_TOKEN triggers no
+          # workflows, so the required store-image-gate check would never run
+          # and the PR could never be merged. Falls back to GITHUB_TOKEN only
+          # when the secret is missing — then the PR needs a manual re-run.
+          GH_TOKEN: ${{ secrets.DOWNSTREAM_SYNC_PAT || github.token }}
           CHANGED: ${{ steps.render.outputs.changed }}
         run: |
           set -euo pipefail
