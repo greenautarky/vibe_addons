@@ -1,0 +1,35 @@
+name: store-image-gate
+
+# Required check on main (ruleset). Runs on EVERY pull request — deliberately
+# no paths filter: a required check that does not run on a PR blocks it forever,
+# and the change that matters most (an `image:` line in an add-on's config) is
+# exactly the one a paths filter would have to list per add-on.
+#
+# Why this is the guard and not a reviewer: store syncs are opened AND merged by
+# automation. What must never happen is a store entry pointing a device at an
+# image outside our own registry — a fresh gateway installs from this store at
+# first boot. The gate makes that impossible on any path, whoever holds a token.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  store-image-namespace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PyYAML
+        run: pip install --quiet "PyYAML>=6,<7"
+      - name: Gate fixtures (must_fail + must_pass, against the live gate)
+        run: python3 tests/store_image_gate/run_fixtures.py
+      - name: Every store entry pulls from ghcr.io/greenautarky
+        run: python3 scripts/check_store_images.py

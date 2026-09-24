@@ -86,6 +86,10 @@ permissions:
   # and GITHUB_TOKEN suffices. That difference is the whole reason a PUBLIC
   # add-on can now be synced without handing it a write-capable secret.
   contents: write
+  # main takes changes only through a pull request (ruleset), so the sync
+  # lands as a PR this job opens and arms for auto-merge. On the dispatch path
+  # that is GITHUB_TOKEN.
+  pull-requests: write
 
 jobs:
   sync-downstream:
@@ -254,35 +258,65 @@ jobs:
           print("no keys would be removed (%d -> %d)" % (len(before), len(after)))
           EOF
 
-      - name: Push the store entry
+      # THROUGH A PULL REQUEST, NOT A PUSH TO MAIN. The store is public and a
+      # fresh gateway installs from it at first boot. main accepts changes only
+      # through a PR whose required check (store-image-gate) passes; the job
+      # opens the PR and arms auto-merge, so no human is needed — the guard is
+      # the check, which no token can skip. A direct push is refused.
+      - name: Open the store PR and merge it once the required check passes
         if: steps.guard.outputs.enabled == 'true'
         env:
+          GH_TOKEN: ${{ steps.guard.outputs.pat }}
           VER: ${{ steps.ver.outputs.value }}
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
           SLUG: ${{ inputs.addon_slug }}
+          SRC: ${{ inputs.addon_repo || github.event.repository.name }}
         run: |
           set -euo pipefail
           cp /tmp/store-rendered.yaml ".store/${STORE_DIR}/config.yaml"
           cd .store
           if git diff --quiet "${STORE_DIR}/config.yaml"; then
-            echo "store already in sync at ${VER} — nothing to push"
-          else
-            git config user.name "ga-ci-bot"
-            git config user.email "ci@greenautarky.com"
-            git commit -am "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${{ inputs.addon_repo || github.event.repository.name }} CI)"
-            git push origin HEAD:main
-            echo "vibe_addons/${STORE_DIR} synced -> ${VER}"
+            echo "store already in sync at ${VER} — nothing to land"
+            exit 0
           fi
+          br="store-sync/${STORE_DIR}-${VER}-${GITHUB_RUN_ID}"
+          git config user.name "ga-ci-bot"
+          git config user.email "ci@greenautarky.com"
+          git checkout -q -b "$br"
+          git commit -qam "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${SRC} CI)"
+          git push -q origin "HEAD:refs/heads/${br}"
+          gh pr create --repo greenautarky/vibe_addons --base main --head "$br" \
+            --title "chore(${SLUG}): full-body store sync to ${VER}" \
+            --body "Automatic store sync from ${SRC} CI (${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Merges itself once store-image-gate is green."
+          gh pr merge "$br" --repo greenautarky/vibe_addons --auto --squash --delete-branch
+          # Wait for the merge, bounded. A PR opened with GITHUB_TOKEN (dispatch
+          # without the PAT) starts no checks and would wait forever: then this
+          # fails loudly and names the PR, instead of reporting a sync that did
+          # not land.
+          for _ in $(seq 1 40); do
+            state="$(gh pr view "$br" --repo greenautarky/vibe_addons --json state -q .state)"
+            [ "$state" = "MERGED" ] && { echo "vibe_addons/${STORE_DIR} synced -> ${VER} via PR"; exit 0; }
+            [ "$state" = "CLOSED" ] && { echo "::error::store PR for ${STORE_DIR} ${VER} was closed unmerged"; exit 1; }
+            sleep 15
+          done
+          url="$(gh pr view "$br" --repo greenautarky/vibe_addons --json url -q .url)"
+          echo "::error::store PR not merged after 10 min — required check red or not started: ${url}"
+          exit 1
 
-      - name: Prove the sync landed
+      # Proven against what MAIN serves now, not against the local clone: the
+      # clone holds the rendered file whether or not the merge happened, so a
+      # check on it would stay green through a refused or pending merge.
+      - name: Prove the sync landed on main
         if: steps.guard.outputs.enabled == 'true'
         env:
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
         run: |
           set -euo pipefail
+          git -C .store fetch -q origin main
+          git -C .store show "origin/main:${STORE_DIR}/config.yaml" > /tmp/store-on-main.yaml
           python3 .store/scripts/verify_store_sync.py \
             "${{ inputs.addon_dir }}/config.yaml" \
-            ".store/${STORE_DIR}/config.yaml" \
+            /tmp/store-on-main.yaml \
             --image "${{ inputs.image_ns }}/${{ inputs.addon_slug }}-{arch}" \
             --name "${{ inputs.addon_slug }}" \
             --source-repo "${{ inputs.addon_repo || github.event.repository.name }}"
