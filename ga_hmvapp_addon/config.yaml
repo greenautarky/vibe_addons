@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA HMVapp Addon"
-version: 2.4.0
+version: 2.5.0
 slug: "ga_hmvapp_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_hmvapp_addon-{arch}
@@ -50,6 +50,12 @@ options:
   # cycles, so one missed cycle never flips a valve to the fallback formula).
   CHECK_INTERVAL: 60
   GD_DIRECTORY: /data/gd_data
+  # Contract 2 (2.5.0): PROPOSALS only — ga_heating is the only writer and decides
+  # whether to apply them. Off = nothing is published on that topic.
+  # ga/hm/valves/<ieee>/desired_opening_degree (0..100 %)
+  publish_opening_degree: false
+  # ga/hm/rooms/<room_key>/desired_mode (auto | heat | off), room = climate.<room_key>
+  publish_mode_requests: false
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
@@ -72,6 +78,8 @@ schema:
   LOCAL_TZ: str
   CHECK_INTERVAL: int
   GD_DIRECTORY: str
+  publish_opening_degree: bool
+  publish_mode_requests: bool
 init: false
 #hassio_api: true
 #hassio_role: default
