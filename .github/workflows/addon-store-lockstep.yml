@@ -18,6 +18,13 @@ name: addon-store-lockstep
 # The store is public and this is store plumbing, so this is where it belongs;
 # private callers can reach it here too, while the reverse is not true.
 #
+# ONE BEHAVIOUR, TWO FILES. Private add-on repos call the copy in the ops repo
+# (ga-ops/.github/workflows/addon-store-lockstep.yml); a public caller cannot
+# reach that one, so it calls this one. Both OPEN the store PR and never merge
+# it: a store entry is what every device installs. What only this copy has is
+# the public-repo plumbing — dispatch from the store with GITHUB_TOKEN, an
+# unauthenticated source checkout, and the token liveness check.
+#
 # Deliberately SEPARATE from addon-publish.yml: that pipeline is python-shaped
 # (PyArmor/Cython obfuscation checks against /app, home-assistant base images).
 # ga_influxdbv1 is a Debian binary add-on with its own build and can never pass
@@ -87,7 +94,7 @@ permissions:
   # add-on can now be synced without handing it a write-capable secret.
   contents: write
   # main takes changes only through a pull request (ruleset), so the sync
-  # lands as a PR this job opens and arms for auto-merge. On the dispatch path
+  # lands as a PR this job opens — and never merges. On the dispatch path
   # that is GITHUB_TOKEN.
   pull-requests: write
 
@@ -219,7 +226,9 @@ jobs:
           PAT: ${{ steps.guard.outputs.pat }}
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
           SLUG: ${{ inputs.addon_slug }}
-          IMAGE_NS: ${{ inputs.image_ns }}
+          # workflow_dispatch has no image_ns input, and a workflow_call default
+          # does not apply there: the dispatch path rendered `image: /<slug>-{arch}`.
+          IMAGE_NS: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}
         run: |
           set -euo pipefail
           git clone --depth 1 "https://x-access-token:${PAT}@github.com/greenautarky/vibe_addons.git" .store
@@ -258,12 +267,19 @@ jobs:
           print("no keys would be removed (%d -> %d)" % (len(before), len(after)))
           EOF
 
-      # THROUGH A PULL REQUEST, NOT A PUSH TO MAIN. The store is public and a
-      # fresh gateway installs from it at first boot. main accepts changes only
-      # through a PR whose required check (store-image-gate) passes; the job
-      # opens the PR and arms auto-merge, so no human is needed — the guard is
-      # the check, which no token can skip. A direct push is refused.
-      - name: Open the store PR and merge it once the required check passes
+      # THROUGH A PULL REQUEST, NOT A PUSH TO MAIN. Since 2026-09-24 vibe_addons
+      # main takes changes only through a PR with a required check (ruleset).
+      # Until 2026-09-28 this copy then armed auto-merge and waited for it,
+      # while the ops-repo copy opened the PR and stopped; one behaviour was
+      # chosen for both: open the PR, never merge it.
+      # Same shape as ga_manager's own sync: a fixed branch per version
+      # (re-runs update it instead of piling up), an existing open PR is
+      # reused, and the URL is QUERIED afterwards, never parsed from
+      # `gh pr create` — so a lost response cannot turn into a false failure,
+      # and a PR that was not created cannot turn into a false success.
+      # Proposes, never merges: a store entry is what every device installs.
+      - name: Open the store PR
+        id: pr
         if: steps.guard.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ steps.guard.outputs.pat }}
@@ -271,58 +287,100 @@ jobs:
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
           SLUG: ${{ inputs.addon_slug }}
           SRC: ${{ inputs.addon_repo || github.event.repository.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GH_DEFAULT: ${{ github.token }}
         run: |
           set -euo pipefail
+          # The commit the store entry was rendered from: the checked-out source
+          # (the caller's commit, or the dispatched repo's default branch).
+          src_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
           cp /tmp/store-rendered.yaml ".store/${STORE_DIR}/config.yaml"
           cd .store
-          if git diff --quiet "${STORE_DIR}/config.yaml"; then
-            echo "store already in sync at ${VER} — nothing to land"
+          if git diff --quiet -- "${STORE_DIR}/config.yaml"; then
+            echo "store already in sync at ${VER} — no PR needed"
+            echo "verify_ref=origin/main" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          br="store-sync/${STORE_DIR}-${VER}-${GITHUB_RUN_ID}"
+          br="ci/sync-${SLUG}-${VER}"
           git config user.name "ga-ci-bot"
           git config user.email "ci@greenautarky.com"
           git checkout -q -b "$br"
-          git commit -qam "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${SRC} CI)"
-          git push -q origin "HEAD:refs/heads/${br}"
-          gh pr create --repo greenautarky/vibe_addons --base main --head "$br" \
-            --title "chore(${SLUG}): full-body store sync to ${VER}" \
-            --body "Automatic store sync from ${SRC} CI (${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Merges itself once store-image-gate is green."
-          gh pr merge "$br" --repo greenautarky/vibe_addons --auto --squash --delete-branch
-          # Wait for the merge, bounded. A PR opened with GITHUB_TOKEN (dispatch
-          # without the PAT) starts no checks and would wait forever: then this
-          # fails loudly and names the PR, instead of reporting a sync that did
-          # not land.
-          for _ in $(seq 1 40); do
-            state="$(gh pr view "$br" --repo greenautarky/vibe_addons --json state -q .state)"
-            [ "$state" = "MERGED" ] && { echo "vibe_addons/${STORE_DIR} synced -> ${VER} via PR"; exit 0; }
-            [ "$state" = "CLOSED" ] && { echo "::error::store PR for ${STORE_DIR} ${VER} was closed unmerged"; exit 1; }
-            sleep 15
-          done
-          url="$(gh pr view "$br" --repo greenautarky/vibe_addons --json url -q .url)"
-          echo "::error::store PR not merged after 10 min — required check red or not started: ${url}"
-          exit 1
+          git commit -qm "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${SRC} ${src_sha:0:12})" \
+            -- "${STORE_DIR}/config.yaml"
+          git push -q -f origin "HEAD:refs/heads/${br}"
+          printf '%s\n\n%s\n' \
+            "Auto-generated by \`${SRC}\` CI after publishing \`${VER}\`: renders \`${STORE_DIR}/config.yaml\` from the source config at \`${SRC}@${src_sha}\` (run: ${RUN_URL})." \
+            "The OS bake pin (\`addon-images.json\` in ha-operating-system) is NOT opened by this job; pin it separately so the store and the bake stay in step." \
+            > /tmp/store-pr-body.md
+          open_pr() {
+            gh pr list --repo greenautarky/vibe_addons --head "$br" --base main \
+              --state open --json url -q '.[0].url // empty'
+          }
+          url="$(open_pr || true)"
+          if [ -n "$url" ]; then
+            echo "open store PR for ${br} already exists — branch updated: ${url}"
+          else
+            # Retried: a transient 5xx here strands the release exactly like
+            # the refused push did. Before each retry, look again — the
+            # previous attempt may have created the PR and lost the response.
+            for attempt in 1 2 3; do
+              if gh pr create --repo greenautarky/vibe_addons --base main --head "$br" \
+                   --title "chore(${SLUG}): store config sync to ${VER}" \
+                   --body-file /tmp/store-pr-body.md >/dev/null; then
+                break
+              fi
+              echo "::warning::gh pr create failed (attempt ${attempt}/3)"
+              sleep $((attempt * 10))
+              [ -n "$(open_pr || true)" ] && break
+            done
+            url="$(open_pr || true)"
+          fi
+          if [ -z "$url" ]; then
+            echo "::error::the store PR for ${STORE_DIR} ${VER} was neither created nor found. The image is published but no device can reach it. Does DOWNSTREAM_SYNC_PAT have pull-requests:write on greenautarky/vibe_addons?"
+            exit 1
+          fi
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ "${GH_TOKEN}" = "${GH_DEFAULT}" ]; then
+            # A PR opened with GITHUB_TOKEN starts no workflow runs, so the
+            # required store-image-gate check will not start on it by itself.
+            echo "::warning::${url} was opened with GITHUB_TOKEN, so its required check has not started — close and reopen it (or push to the branch) to run the gate"
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "verify_ref=origin/${br}" >> "$GITHUB_OUTPUT"
+          echo "vibe_addons store PR -> ${url}"
+          {
+            echo "### Store sync for ${SLUG} ${VER}"
+            echo ""
+            echo "vibe_addons PR: ${url} (not merged by CI)."
+            echo "The OS bake pin is not opened by this job — pin it separately."
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      # Proven against what MAIN serves now, not against the local clone: the
-      # clone holds the rendered file whether or not the merge happened, so a
-      # check on it would stay green through a refused or pending merge.
-      - name: Prove the sync landed on main
+      # Proven against what the REMOTE holds — the PR branch, or main when
+      # nothing moved — not against the local clone: the clone holds the
+      # rendered file whether or not the push happened, so a check on it
+      # would stay green through a refused push.
+      - name: Prove the store PR carries the source config
         if: steps.guard.outputs.enabled == 'true'
         env:
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
+          REF: ${{ steps.pr.outputs.verify_ref }}
         run: |
           set -euo pipefail
-          git -C .store fetch -q origin main
-          git -C .store show "origin/main:${STORE_DIR}/config.yaml" > /tmp/store-on-main.yaml
+          test -n "${REF}" || { echo "::error::no ref to verify — the PR step did not report one"; exit 1; }
+          git -C .store fetch -q origin "+refs/heads/${REF#origin/}:refs/remotes/${REF}"
+          git -C .store show "${REF}:${STORE_DIR}/config.yaml" > /tmp/store-on-remote.yaml
+          echo "verifying ${REF}"
           python3 .store/scripts/verify_store_sync.py \
             "${{ inputs.addon_dir }}/config.yaml" \
-            /tmp/store-on-main.yaml \
-            --image "${{ inputs.image_ns }}/${{ inputs.addon_slug }}-{arch}" \
+            /tmp/store-on-remote.yaml \
+            --image "${{ inputs.image_ns || 'ghcr.io/greenautarky' }}/${{ inputs.addon_slug }}-{arch}" \
             --name "${{ inputs.addon_slug }}" \
             --source-repo "${{ inputs.addon_repo || github.event.repository.name }}"
 
       # The addon-images.json pin PR used to live here and needed write access to
-      # ha-operating-system. It moved INTO that repo (pin-addon-images.yaml): the
-      # OS reads the public store itself and opens its own PR with its own
-      # GITHUB_TOKEN. One cross-repo credential fewer, and the pin no longer
-      # depends on an add-on repo happening to build.
+      # ha-operating-system. It moved INTO that repo (pin-addon-images.yml) on
+      # 2026-08-18 — and that file was REMOVED on 2026-09-15 (ha-operating-system
+      # #533): a PR opened with GITHUB_TOKEN starts no workflow runs, so it could
+      # never satisfy master's required checks. Since then only ga_manager's own
+      # publish opens a bake-pin PR; for every add-on that calls this workflow
+      # the pin is set by hand, and version-check.yml (hourly) goes red while it
+      # lags. Stated here so nobody reads this job as covering the pin.
