@@ -4,31 +4,39 @@ name: addon-store-lockstep
 #
 #   source repo config.yaml  ->  vibe_addons store entry  ->  OS bake pin
 #
-# The PUBLIC vibe_addons config.yaml is what the Supervisor reads (ports,
-# options, schema, maps). Every add-on except ga_manager synced it BY HAND, so
-# a change made only in a source repo shipped an image and reached no device.
-# Two features were fleet-wide undeployable that way before anyone noticed.
-# ga_manager's publish.yaml already did this; here it is once, for everyone.
+# This workflow covers both arrows, as two PULL REQUESTS that it opens and
+# never merges: the store PR here, then the bake-pin PR on ha-operating-system
+# (addon-images.json + the generated expected.env). A store entry is what
+# every device installs, and main here takes changes only through a PR with a
+# required check; a person merges both.
 #
-# LIVES HERE, NOT IN THE PRIVATE OPS REPO. It was written there, and its only
-# caller is a PUBLIC add-on repo — which cannot resolve a reusable workflow in
-# a private one, `access_level: organization` or not. The call failed with
-# `workflow was not found`, no jobs, no log, and the add-on could not publish
-# at all for two days before anything touched its sources and revealed it.
-# The store is public and this is store plumbing, so this is where it belongs;
-# private callers can reach it here too, while the reverse is not true.
+# THE ONLY COPY. It lives in this PUBLIC repository because a public add-on
+# repo cannot call a reusable workflow (or use an action) in a private one,
+# while a private repo can call a public one. Private add-on repos call it
+# directly or through the ops repo's shared publish pipeline; public add-on
+# repos call it directly. There is no second copy to drift from this one.
 #
-# Deliberately SEPARATE from addon-publish.yml: that pipeline is python-shaped
-# (PyArmor/Cython obfuscation checks against /app, home-assistant base images).
-# ga_influxdbv1 is a Debian binary add-on with its own build and can never pass
-# those gates — but it needs the store sync just as much. Any add-on repo can
-# call this after its own build, whatever that build looks like.
+# Credential: .github/actions/release-token in this repository — the
+# ga-release-bot GitHub App when its secrets reach the caller, the transitional
+# DOWNSTREAM_SYNC_PAT with a loud warning otherwise, a hard error with neither.
+# An App token, unlike GITHUB_TOKEN, starts the target repo's checks, which is
+# what lets a bot-opened pin PR pass its required checks.
+#
+# Secrets reach this workflow only from its caller: `secrets: inherit` (same
+# organization) or explicitly. The job's own GITHUB_TOKEN is used for nothing
+# but checking out the caller's source, so the workflow asks for
+# `contents: read` and nothing else — and callers need grant no more.
+#
+# Deliberately SEPARATE from the python-shaped publish pipeline (obfuscation
+# checks, home-assistant base images): Debian binary add-ons have their own
+# build but need the store sync just as much. Any add-on repo can call this
+# after its own build, whatever that build looks like.
 
 on:
-  # Dispatchable as well as callable. A store sync writes ONE line, but as a
-  # tail of the publish pipeline a failed sync could only be repaired by
-  # rebuilding every architecture — fifty minutes of QEMU for a one-line fix,
-  # which is what it cost on 2026-08-19. Dispatched, it costs a minute.
+  # Dispatchable as well as callable: a store sync as the tail of a publish
+  # could otherwise only be repaired by rebuilding every architecture. A
+  # dispatch here runs with THIS repository's secrets, so it needs the App
+  # secrets to be visible to this repository — without them it fails loudly.
   workflow_dispatch:
     inputs:
       addon_repo:
@@ -48,6 +56,11 @@ on:
         required: false
         type: string
         default: ""
+      bake_pin:
+        description: "auto | required | none — see the workflow_call input"
+        required: false
+        type: string
+        default: auto
   workflow_call:
     inputs:
       addon_dir:
@@ -65,145 +78,96 @@ on:
         default: ghcr.io/greenautarky
       store_dir:
         description: >-
-          Directory inside the PUBLIC vibe_addons repo. Defaults to addon_slug
-          (right for ga_default_addon / ga_hmvapp_addon); influxdb, mosquitto
-          and zigbee2mqtt differ and must pass it explicitly.
+          Directory inside this store repo. Defaults to addon_slug (right for
+          ga_default_addon / ga_hmvapp_addon); influxdb, mosquitto and
+          zigbee2mqtt differ and must pass it explicitly.
         required: false
         type: string
         default: ""
+      bake_pin:
+        description: >-
+          Does this add-on have a bake pin in ha-operating-system's
+          addon-images.json? `auto` (default): open the pin PR when an entry
+          whose image is <image_ns>/<addon_slug>-{arch} exists, WARN when none
+          does. `required`: no entry is a hard error. `none`: this add-on is not
+          baked — skip, and fail if an entry exists after all.
+        required: false
+        type: string
+        default: auto
     secrets:
+      GA_RELEASE_APP_ID:
+        description: "ga-release-bot App: Client ID (or numeric App ID)."
+        required: false
+      GA_RELEASE_APP_PRIVATE_KEY:
+        description: "ga-release-bot App: PEM private key."
+        required: false
       DOWNSTREAM_SYNC_PAT:
         description: >-
-          Write access to vibe_addons (that is all this needs since the OS pin
-          moved into ha-operating-system itself). Without it this announces
-          itself as skipped — it never silently pretends to have synced.
+          TRANSITIONAL fallback, used only when the App secrets are not visible
+          — with a loud warning. Needs contents + pull-requests write on
+          vibe_addons, and on ha-operating-system for a baked add-on.
         required: false
 
+# Least privilege. Every write goes through the release credential; the job's
+# own GITHUB_TOKEN only checks out the caller's source. A called workflow can
+# never hold more than its caller grants, so asking for more here would make
+# every caller that grants `contents: read` fail to even start.
 permissions:
-  # `write` so a dispatch from the store can push its own entry. On the
-  # workflow_call path the push still uses the caller's PAT (it may be a
-  # different repository); on the dispatch path the target IS this repository
-  # and GITHUB_TOKEN suffices. That difference is the whole reason a PUBLIC
-  # add-on can now be synced without handing it a write-capable secret.
-  contents: write
-  # main takes changes only through a pull request (ruleset), so the sync
-  # lands as a PR this job opens and arms for auto-merge. On the dispatch path
-  # that is GITHUB_TOKEN.
-  pull-requests: write
+  contents: read
 
 jobs:
   sync-downstream:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: github.event_name != 'workflow_dispatch'
+        with:
+          persist-credentials: false
 
-      # A PUBLIC source repo needs no credential to read, and passing an empty
-      # secret made this step fail outright — so a public add-on could not be
-      # dispatched at all. That is how ga_influxdbv1 came to be hand-synced
-      # twice on 2026-08-26: it is public, so it must not hold a write-capable
-      # token, so its own publish could not sync, and dispatching from here did
-      # not work either. Try unauthenticated first; fall back for private ones.
+      # Dispatched: a PUBLIC source repo needs no credential to read, so try
+      # unauthenticated first; only a private one needs the release token to
+      # cover it as well (see the next step).
       - name: Check out the add-on source repo (dispatch, public)
         if: github.event_name == 'workflow_dispatch'
         id: src_public
         continue-on-error: true
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: greenautarky/${{ inputs.addon_repo }}
+          persist-credentials: false
+
+      # One credential for everything below, selected by the shared action —
+      # the same one ga_manager's publish uses. Nothing in this job reads
+      # secrets.DOWNSTREAM_SYNC_PAT directly; tests/release_token asserts that.
+      # Referenced by full path: in a called workflow `./` would resolve to the
+      # CALLER's checkout, not to this repository.
+      - name: Release credential (ga-release-bot App, loud PAT fallback)
+        id: token
+        uses: greenautarky/vibe_addons/.github/actions/release-token@main
+        with:
+          app-id: ${{ secrets.GA_RELEASE_APP_ID }}
+          app-private-key: ${{ secrets.GA_RELEASE_APP_PRIVATE_KEY }}
+          fallback-pat: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
+          repositories: ${{ (github.event_name == 'workflow_dispatch' && steps.src_public.outcome == 'failure') && format('vibe_addons,ha-operating-system,{0}', inputs.addon_repo) || 'vibe_addons,ha-operating-system' }}
 
       - name: Check out the add-on source repo (dispatch, private)
         if: github.event_name == 'workflow_dispatch' && steps.src_public.outcome == 'failure'
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           repository: greenautarky/${{ inputs.addon_repo }}
-          token: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
-
-      - name: Guard — is the token present?
-        id: guard
-        env:
-          PAT: ${{ secrets.DOWNSTREAM_SYNC_PAT }}
-          EVENT: ${{ github.event_name }}
-          GH_DEFAULT: ${{ github.token }}
-        run: |
-          # DISPATCHED FROM THE STORE, the push target is this very repository
-          # and GITHUB_TOKEN can write it. Demanding a cross-repo PAT here was
-          # the reason a public add-on had no way to sync at all.
-          if [ "${EVENT}" = "workflow_dispatch" ] && [ -z "${PAT:-}" ]; then
-            echo "dispatched from the store itself — pushing with GITHUB_TOKEN"
-            echo "::add-mask::${GH_DEFAULT}"
-            echo "pat=${GH_DEFAULT}" >> "$GITHUB_OUTPUT"
-            echo "enabled=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [ -z "${PAT:-}" ]; then
-            # Hard error, not a warning. Calling this workflow IS the statement
-            # that the store should be synced; a missing token means it silently
-            # was not, and the job then reports success for doing nothing. That
-            # is exactly what happened on 2026-08-19: the secret had been
-            # overwritten with an empty value, the guard skipped every step, and
-            # the run went green while the store stayed three versions behind.
-            echo "::error::DOWNSTREAM_SYNC_PAT is empty or unset. This workflow was called, so the store is expected to be synced — refusing to report success for a no-op. Set the secret in the calling repository."
-            exit 1
-          fi
-          # A pasted secret routinely carries a trailing newline, and git then
-          # fails with "credential url cannot be parsed" — a message that names
-          # neither the secret nor the newline, and cost an hour to trace once.
-          # Say it here, in one line, and carry on with the trimmed value.
-          clean="$(printf '%s' "$PAT" | tr -d '[:space:]')"
-          if [ "${#clean}" -ne "${#PAT}" ]; then
-            echo "::warning::DOWNSTREAM_SYNC_PAT contains whitespace (probably a trailing newline from pasting). Using the trimmed value — re-paste it without the newline to silence this."
-          fi
-          if [ -z "$clean" ]; then
-            echo "::error::DOWNSTREAM_SYNC_PAT is only whitespace"
-            exit 1
-          fi
-          echo "::add-mask::$clean"
-          echo "pat=$clean" >> "$GITHUB_OUTPUT"
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-
-          # PRESENT IS NOT ALIVE, AND ALIVE IS NOT ALLOWED TO WRITE.
-          #
-          # Everything above proves a non-empty string exists. It cannot tell a
-          # working credential from a revoked one, and a revoked token fails
-          # LATER — at the push, in a job nobody opens, on the day of a release.
-          #
-          # On 2026-08-26 a leaked classic PAT was revoked on one account while
-          # three repositories carried a DOWNSTREAM_SYNC_PAT set a week earlier.
-          # Whether those were the same token could not be established from the
-          # outside: a repository secret does not name its owner, and re-running
-          # a sync with nothing to push only exercised a public READ. The answer
-          # needed a write, and a release is the wrong moment to find out.
-          #
-          # Printed: the login, the scopes header, and whether the token may
-          # write here. Never the value.
-          who="$(curl -sS -H "Authorization: Bearer $clean" -D /tmp/pat-hdr \
-                      https://api.github.com/user \
-                 | sed -n 's/.*"login": *"\([^"]*\)".*/\1/p' | head -1)"
-          scopes="$(sed -n 's/^[Xx]-[Oo][Aa]uth-[Ss]copes: *//p' /tmp/pat-hdr | tr -d '\r')"
-          if [ -z "$who" ]; then
-            echo "::error::DOWNSTREAM_SYNC_PAT is set but GitHub does not accept it — revoked, expired or malformed. Rotate the secret in the calling repository."
-            exit 1
-          fi
-          perm="$(curl -sS -H "Authorization: Bearer $clean" \
-                       "https://api.github.com/repos/${GITHUB_REPOSITORY}" \
-                  | sed -n 's/.*"push": *\(true\|false\).*/\1/p' | head -1)"
-          echo "token owner: ${who} | scopes: ${scopes:-<fine-grained>} | may push to ${GITHUB_REPOSITORY}: ${perm:-unknown}"
-          if [ "$perm" != "true" ]; then
-            echo "::error::The token belongs to ${who} and is alive, but cannot write to ${GITHUB_REPOSITORY}. A declared scope is a ceiling, not a grant — the effective right is the lower of the token's scope and its holder's permission."
-            exit 1
-          fi 
+          token: ${{ steps.token.outputs.token }}
+          persist-credentials: false
 
       - name: Install PyYAML
-        if: steps.guard.outputs.enabled == 'true'
         run: pip install --quiet "PyYAML>=6,<7"
 
       - name: Read add-on version
-        if: steps.guard.outputs.enabled == 'true'
         id: ver
+        env:
+          ADDON_DIR: ${{ inputs.addon_dir }}
         run: |
           set -euo pipefail
-          f="${{ inputs.addon_dir }}/config.yaml"
+          f="${ADDON_DIR}/config.yaml"
           ver=$(awk 'BEGIN{IGNORECASE=1}
             /^[[:space:]]*version[[:space:]]*:/{
               sub(/^.*version[[:space:]]*:[[:space:]]*/,"");
@@ -214,22 +178,25 @@ jobs:
           echo "value=$ver" >> "$GITHUB_OUTPUT"
 
       - name: Render the store entry (no push yet)
-        if: steps.guard.outputs.enabled == 'true'
         env:
-          PAT: ${{ steps.guard.outputs.pat }}
+          PAT: ${{ steps.token.outputs.token }}
+          ADDON_DIR: ${{ inputs.addon_dir }}
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
           SLUG: ${{ inputs.addon_slug }}
-          IMAGE_NS: ${{ inputs.image_ns }}
+          SRC: ${{ inputs.addon_repo || github.event.repository.name }}
+          # workflow_dispatch has no image_ns input, and a workflow_call default
+          # does not apply there: the dispatch path rendered `image: /<slug>-{arch}`.
+          IMAGE_NS: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}
         run: |
           set -euo pipefail
-          git clone --depth 1 "https://x-access-token:${PAT}@github.com/greenautarky/vibe_addons.git" .store
+          git clone -q --depth 1 "https://x-access-token:${PAT}@github.com/greenautarky/vibe_addons.git" .store
           test -d ".store/${STORE_DIR}" || { echo "::error::vibe_addons/${STORE_DIR} does not exist — pass the right store_dir"; exit 1; }
           cp ".store/${STORE_DIR}/config.yaml" /tmp/store-before.yaml
           python3 .store/scripts/render_store_config.py \
-            "${{ inputs.addon_dir }}/config.yaml" \
+            "${ADDON_DIR}/config.yaml" \
             --image "${IMAGE_NS}/${SLUG}-{arch}" \
             --name "${SLUG}" \
-            --source-repo "${{ inputs.addon_repo || github.event.repository.name }}" \
+            --source-repo "${SRC}" \
             > /tmp/store-rendered.yaml
 
       # The automation may ADD and CHANGE keys. It may never DELETE one that the
@@ -238,7 +205,6 @@ jobs:
       # otherwise silently strip it fleet-wide. Checked BEFORE the push, because a
       # proof that runs after the damage is not a gate.
       - name: Refuse to drop keys the store publishes today
-        if: steps.guard.outputs.enabled == 'true'
         run: |
           set -euo pipefail
           python3 - <<'EOF'
@@ -258,71 +224,291 @@ jobs:
           print("no keys would be removed (%d -> %d)" % (len(before), len(after)))
           EOF
 
-      # THROUGH A PULL REQUEST, NOT A PUSH TO MAIN. The store is public and a
-      # fresh gateway installs from it at first boot. main accepts changes only
-      # through a PR whose required check (store-image-gate) passes; the job
-      # opens the PR and arms auto-merge, so no human is needed — the guard is
-      # the check, which no token can skip. A direct push is refused.
-      - name: Open the store PR and merge it once the required check passes
-        if: steps.guard.outputs.enabled == 'true'
+      # THROUGH A PULL REQUEST, NOT A PUSH TO MAIN: main takes changes only
+      # through a PR with a required check (ruleset). A fixed branch per version
+      # (re-runs update it instead of piling up), an existing open PR is reused,
+      # and the URL is QUERIED afterwards, never parsed from `gh pr create` — so
+      # a lost response cannot turn into a false failure, and a PR that was not
+      # created cannot turn into a false success. Proposes, never merges.
+      - name: Open the store PR
+        id: pr
         env:
-          GH_TOKEN: ${{ steps.guard.outputs.pat }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          CRED: ${{ steps.token.outputs.mode }}
           VER: ${{ steps.ver.outputs.value }}
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
           SLUG: ${{ inputs.addon_slug }}
           SRC: ${{ inputs.addon_repo || github.event.repository.name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          # The commit the store entry was rendered from: the checked-out source
+          # (the caller's commit, or the dispatched repo's default branch).
+          src_sha="$(git -C "$GITHUB_WORKSPACE" rev-parse HEAD)"
           cp /tmp/store-rendered.yaml ".store/${STORE_DIR}/config.yaml"
           cd .store
-          if git diff --quiet "${STORE_DIR}/config.yaml"; then
-            echo "store already in sync at ${VER} — nothing to land"
+          if git diff --quiet -- "${STORE_DIR}/config.yaml"; then
+            echo "store already in sync at ${VER} — no PR needed"
+            echo "verify_ref=origin/main" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          br="store-sync/${STORE_DIR}-${VER}-${GITHUB_RUN_ID}"
-          git config user.name "ga-ci-bot"
+          br="ci/sync-${SLUG}-${VER}"
+          git config user.name "ga-release-bot"
           git config user.email "ci@greenautarky.com"
           git checkout -q -b "$br"
-          git commit -qam "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${SRC} CI)"
-          git push -q origin "HEAD:refs/heads/${br}"
-          gh pr create --repo greenautarky/vibe_addons --base main --head "$br" \
-            --title "chore(${SLUG}): full-body store sync to ${VER}" \
-            --body "Automatic store sync from ${SRC} CI (${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). Merges itself once store-image-gate is green."
-          gh pr merge "$br" --repo greenautarky/vibe_addons --auto --squash --delete-branch
-          # Wait for the merge, bounded. A PR opened with GITHUB_TOKEN (dispatch
-          # without the PAT) starts no checks and would wait forever: then this
-          # fails loudly and names the PR, instead of reporting a sync that did
-          # not land.
-          for _ in $(seq 1 40); do
-            state="$(gh pr view "$br" --repo greenautarky/vibe_addons --json state -q .state)"
-            [ "$state" = "MERGED" ] && { echo "vibe_addons/${STORE_DIR} synced -> ${VER} via PR"; exit 0; }
-            [ "$state" = "CLOSED" ] && { echo "::error::store PR for ${STORE_DIR} ${VER} was closed unmerged"; exit 1; }
-            sleep 15
-          done
-          url="$(gh pr view "$br" --repo greenautarky/vibe_addons --json url -q .url)"
-          echo "::error::store PR not merged after 10 min — required check red or not started: ${url}"
-          exit 1
+          git commit -qm "chore(${SLUG}): full-body store sync to ${VER} (auto-lockstep from ${SRC} ${src_sha:0:12})" \
+            -- "${STORE_DIR}/config.yaml"
+          git push -q -f origin "HEAD:refs/heads/${br}"
+          printf '%s\n\n%s\n' \
+            "Auto-generated by \`${SRC}\` CI after publishing \`${VER}\`: renders \`${STORE_DIR}/config.yaml\` from the source config at \`${SRC}@${src_sha}\` (run: ${RUN_URL})." \
+            "**Merge together with the ha-operating-system bake-pin PR** that the same run opens (cross-linked in a comment, unless this add-on is not baked). Merge THIS one first: the pin PR's \`check-versions\` compares the bake pin with the store and stays red until the store carries this version." \
+            > /tmp/store-pr-body.md
+          open_pr() {
+            gh pr list --repo greenautarky/vibe_addons --head "$br" --base main \
+              --state open --json url -q '.[0].url // empty'
+          }
+          url="$(open_pr || true)"
+          if [ -n "$url" ]; then
+            echo "open store PR for ${br} already exists — branch updated: ${url}"
+          else
+            # Retried: a transient 5xx here strands the release. Before each
+            # retry, look again — the previous attempt may have created the PR
+            # and lost the response.
+            for attempt in 1 2 3; do
+              if gh pr create --repo greenautarky/vibe_addons --base main --head "$br" \
+                   --title "chore(${SLUG}): store config sync to ${VER}" \
+                   --body-file /tmp/store-pr-body.md >/dev/null; then
+                break
+              fi
+              echo "::warning::gh pr create failed (attempt ${attempt}/3)"
+              sleep $((attempt * 10))
+              [ -n "$(open_pr || true)" ] && break
+            done
+            url="$(open_pr || true)"
+          fi
+          if [ -z "$url" ]; then
+            echo "::error::the store PR for ${STORE_DIR} ${VER} was neither created nor found. The image is published but no device can reach it. Does the release credential (${CRED}) have pull-requests:write on greenautarky/vibe_addons?"
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "verify_ref=origin/${br}" >> "$GITHUB_OUTPUT"
+          echo "vibe_addons store PR -> ${url}"
 
-      # Proven against what MAIN serves now, not against the local clone: the
-      # clone holds the rendered file whether or not the merge happened, so a
-      # check on it would stay green through a refused or pending merge.
-      - name: Prove the sync landed on main
-        if: steps.guard.outputs.enabled == 'true'
+      # Proven against what the REMOTE holds — the PR branch, or main when
+      # nothing moved — not against the local clone: the clone holds the
+      # rendered file whether or not the push happened, so a check on it
+      # would stay green through a refused push.
+      - name: Prove the store PR carries the source config
         env:
+          ADDON_DIR: ${{ inputs.addon_dir }}
           STORE_DIR: ${{ inputs.store_dir || inputs.addon_slug }}
+          REF: ${{ steps.pr.outputs.verify_ref }}
+          SLUG: ${{ inputs.addon_slug }}
+          SRC: ${{ inputs.addon_repo || github.event.repository.name }}
+          IMAGE_NS: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}
         run: |
           set -euo pipefail
-          git -C .store fetch -q origin main
-          git -C .store show "origin/main:${STORE_DIR}/config.yaml" > /tmp/store-on-main.yaml
+          test -n "${REF}" || { echo "::error::no ref to verify — the PR step did not report one"; exit 1; }
+          git -C .store fetch -q origin "+refs/heads/${REF#origin/}:refs/remotes/${REF}"
+          git -C .store show "${REF}:${STORE_DIR}/config.yaml" > /tmp/store-on-remote.yaml
+          echo "verifying ${REF}"
           python3 .store/scripts/verify_store_sync.py \
-            "${{ inputs.addon_dir }}/config.yaml" \
-            /tmp/store-on-main.yaml \
-            --image "${{ inputs.image_ns }}/${{ inputs.addon_slug }}-{arch}" \
-            --name "${{ inputs.addon_slug }}" \
-            --source-repo "${{ inputs.addon_repo || github.event.repository.name }}"
+            "${ADDON_DIR}/config.yaml" \
+            /tmp/store-on-remote.yaml \
+            --image "${IMAGE_NS}/${SLUG}-{arch}" \
+            --name "${SLUG}" \
+            --source-repo "${SRC}"
 
-      # The addon-images.json pin PR used to live here and needed write access to
-      # ha-operating-system. It moved INTO that repo (pin-addon-images.yaml): the
-      # OS reads the public store itself and opens its own PR with its own
-      # GITHUB_TOKEN. One cross-repo credential fewer, and the pin no longer
-      # depends on an add-on repo happening to build.
+      # ── The OS bake pin ─────────────────────────────────────────────────────
+      # Same shape as ga_manager's pin step: bump the entry in addon-images.json,
+      # regenerate tests/ga_tests/os_integrity/expected.env with the OS repo's
+      # own generator (the OS CI fails a PR where the two disagree), fixed
+      # branch per version, reuse an open PR, query the URL.
+      # The pin PR goes green only after the store PR is merged — its
+      # check-versions compares the pin with the store. It is opened now and NOT
+      # waited for: waiting would hold this job for a human merge.
+      - name: Check out the OS bake pins
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 "https://x-access-token:${TOKEN}@github.com/greenautarky/ha-operating-system.git" .os
+
+      # Which addon-images.json entry is this add-on? Matched by IMAGE, not by
+      # name: the keys are not the slugs (ga_mosquitto is `mosquitto`), but the
+      # image is exactly what the bake pulls. tests/lockstep_bake_pin drives it.
+      - name: Find this add-on's bake pin
+        id: pinkey
+        env:
+          PINS_FILE: .os/buildroot-external/package/hassio/addon-images.json
+          IMAGE: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}/${{ inputs.addon_slug }}-{arch}
+          BAKE_PIN: ${{ inputs.bake_pin || 'auto' }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          mode = os.environ["BAKE_PIN"]
+          image = os.environ["IMAGE"]
+          if mode not in ("auto", "required", "none"):
+              print(f"::error::bake_pin must be auto, required or none — got {mode!r}")
+              sys.exit(1)
+          try:
+              addons = json.load(open(os.environ["PINS_FILE"]))["addons"]
+          except Exception as e:  # a pin file we cannot read is not "not baked"
+              print(f"::error::cannot read the bake pins ({os.environ['PINS_FILE']}): {e}")
+              sys.exit(1)
+          if not addons:
+              print("::error::addon-images.json lists no add-ons at all — refusing to read that as 'not baked'")
+              sys.exit(1)
+          hits = sorted(k for k, e in addons.items() if (e or {}).get("image") == image)
+          out = open(os.environ["GITHUB_OUTPUT"], "a")
+          if len(hits) > 1:
+              print(f"::error::{len(hits)} addon-images.json entries use {image}: {', '.join(hits)} — cannot tell which one to pin")
+              sys.exit(1)
+          if hits:
+              key = hits[0]
+              if mode == "none":
+                  print(f"::error::this caller says bake_pin: none, but addon-images.json pins {image} as '{key}'. "
+                        "That pin would silently fall behind every release — drop `bake_pin: none` from the caller.")
+                  sys.exit(1)
+              cur = addons[key].get("version", "")
+              print(f"bake pin: '{key}' = {cur}")
+              out.write(f"action=pin\nkey={key}\ncurrent={cur}\n")
+              sys.exit(0)
+          if mode == "required":
+              print(f"::error::no addon-images.json entry uses {image}, and this caller says bake_pin: required")
+              sys.exit(1)
+          if mode == "auto":
+              print(f"::warning::no addon-images.json entry uses {image}, so no bake-pin PR was opened. "
+                    "If this add-on IS baked, its image name and the pin have drifted apart; "
+                    "if it is not, pass `bake_pin: none` from the caller to say so.")
+          else:
+              print(f"not baked (bake_pin: none, and no entry uses {image}) — no pin PR")
+          out.write("action=skip\n")
+          PY
+
+      - name: Open the bake-pin PR (ha-operating-system)
+        id: pin
+        if: steps.pinkey.outputs.action == 'pin'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          CRED: ${{ steps.token.outputs.mode }}
+          VER: ${{ steps.ver.outputs.value }}
+          KEY: ${{ steps.pinkey.outputs.key }}
+          CUR: ${{ steps.pinkey.outputs.current }}
+          SLUG: ${{ inputs.addon_slug }}
+          SRC: ${{ inputs.addon_repo || github.event.repository.name }}
+          STORE_URL: ${{ steps.pr.outputs.url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cd .os
+          f=buildroot-external/package/hassio/addon-images.json
+          if [ "$CUR" = "$VER" ]; then
+            echo "addon-images.json already pins ${KEY} at ${VER} — no PR needed"
+            echo "verify_ref=origin/master" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tmp=$(mktemp)
+          jq --arg k "$KEY" --arg v "$VER" '.addons[$k].version = $v' "$f" > "$tmp" && mv "$tmp" "$f"
+          # The generator reads only the repo's own declarations and fails
+          # closed; `set -e` turns a failure into a red step, not a PR that is
+          # red on arrival.
+          bash tests/ga_tests/os_integrity/gen_expected.sh >/dev/null
+          br="ci/pin-${SLUG}-${VER}"
+          git config user.name "ga-release-bot"
+          git config user.email "ci@greenautarky.com"
+          git checkout -q -b "$br"
+          git commit -qm "chore(bake): pin ${SLUG} addon image to ${VER} (auto from ${SRC} CI)" \
+            -- "$f" tests/ga_tests/os_integrity/expected.env
+          git push -q -f origin "HEAD:refs/heads/${br}"
+          printf '%s\n\n%s\n\n%s\n' \
+            "Auto-generated by \`${SRC}\` CI after publishing \`${VER}\` (run: ${RUN_URL}). Bumps \`${KEY}\` in \`addon-images.json\` from \`${CUR}\` and regenerates \`expected.env\` with \`gen_expected.sh\`." \
+            "**Merge together with the vibe_addons store PR:** ${STORE_URL:-(none — the store was already at this version)}" \
+            "Merge the store PR FIRST. \`check-versions\` compares this pin with the store and stays red until the store carries \`${VER}\`; re-run it after the store merge. Merging only one of the two puts the store and the bake out of step." \
+            > /tmp/pin-pr-body.md
+          open_pr() {
+            gh pr list --repo greenautarky/ha-operating-system --head "$br" --base master \
+              --state open --json url -q '.[0].url // empty'
+          }
+          url="$(open_pr || true)"
+          if [ -n "$url" ]; then
+            echo "open bake-pin PR for ${br} already exists — branch updated: ${url}"
+          else
+            for attempt in 1 2 3; do
+              if gh pr create --repo greenautarky/ha-operating-system --base master --head "$br" \
+                   --title "chore(bake): pin ${SLUG} addon image to ${VER}" \
+                   --body-file /tmp/pin-pr-body.md >/dev/null; then
+                break
+              fi
+              echo "::warning::gh pr create failed (attempt ${attempt}/3)"
+              sleep $((attempt * 10))
+              [ -n "$(open_pr || true)" ] && break
+            done
+            url="$(open_pr || true)"
+          fi
+          if [ -z "$url" ]; then
+            echo "::error::the bake-pin PR for ${KEY} ${VER} was neither created nor found. The store PR may now be ahead of addon-images.json — the half-applied lockstep this job exists to avoid. Does the release credential (${CRED}) have pull-requests:write on greenautarky/ha-operating-system?"
+            exit 1
+          fi
+          echo "url=${url}" >> "$GITHUB_OUTPUT"
+          echo "verify_ref=origin/${br}" >> "$GITHUB_OUTPUT"
+          echo "bake-pin PR -> ${url}"
+
+      # Against the REMOTE branch, for the same reason as the store proof.
+      - name: Prove the bake-pin PR carries this version
+        id: pinproof
+        if: steps.pinkey.outputs.action == 'pin'
+        env:
+          REF: ${{ steps.pin.outputs.verify_ref }}
+          KEY: ${{ steps.pinkey.outputs.key }}
+          VER: ${{ steps.ver.outputs.value }}
+          IMAGE: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}/${{ inputs.addon_slug }}-armv7
+        run: |
+          set -euo pipefail
+          test -n "${REF}" || { echo "::error::no ref to verify — the pin step did not report one"; exit 1; }
+          git -C .os fetch -q --depth 1 origin "+refs/heads/${REF#origin/}:refs/remotes/${REF}"
+          got=$(git -C .os show "${REF}:buildroot-external/package/hassio/addon-images.json" | jq -r --arg k "$KEY" '.addons[$k].version')
+          [ "$got" = "$VER" ] || { echo "::error::${REF} pins ${KEY} at '${got}', not ${VER}"; exit 1; }
+          git -C .os show "${REF}:tests/ga_tests/os_integrity/expected.env" | grep -qF "${KEY}=${IMAGE}:${VER}" \
+            || { echo "::error::${REF}: expected.env does not carry ${KEY}=${IMAGE}:${VER} — the pin PR would be red on arrival"; exit 1; }
+          echo "verified ${REF}: ${KEY} = ${VER}, expected.env in step"
+
+      - name: Cross-link the pair + run summary
+        if: always() && steps.pr.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          CRED: ${{ steps.token.outputs.mode }}
+          SLUG: ${{ inputs.addon_slug }}
+          VER: ${{ steps.ver.outputs.value }}
+          STORE: ${{ steps.pr.outputs.url }}
+          PIN: ${{ steps.pin.outputs.url }}
+          PIN_ACTION: ${{ steps.pinkey.outputs.action }}
+          PIN_OUTCOME: ${{ steps.pin.outcome }}
+          PIN_PROOF: ${{ steps.pinproof.outcome }}
+        run: |
+          set -uo pipefail
+          if [ -n "${STORE:-}" ] && [ -n "${PIN:-}" ]; then
+            gh pr comment "$STORE" --body "Pairs with the bake pin: $PIN — **merge both, this one first**." \
+              || echo "::warning::could not comment on ${STORE}"
+          fi
+          case "${PIN_ACTION:-}" in
+            pin)
+              if [ "${PIN_OUTCOME:-}" != success ] || [ "${PIN_PROOF:-}" != success ]; then
+                pin_row="**FAILED — see the failed step** ${PIN:-}"
+              else
+                pin_row="${PIN:-_none (already pinned)_}"
+              fi ;;
+            skip) pin_row="_none — not baked (see the annotation)_" ;;
+            *)    pin_row="**not reached — see the failed step**" ;;
+          esac
+          {
+            echo "### Lockstep PRs for ${SLUG} ${VER}"
+            echo ""
+            echo "| Side | PR |"
+            echo "|---|---|"
+            echo "| vibe_addons store | ${STORE:-_none (already in sync)_} |"
+            echo "| addon-images.json bake pin | ${pin_row} |"
+            echo ""
+            echo "Opened with: \`${CRED}\` credential. Not merged by CI. Merge the store PR first, then the pin PR (its check-versions goes green once the store carries ${VER})."
+          } >> "$GITHUB_STEP_SUMMARY"

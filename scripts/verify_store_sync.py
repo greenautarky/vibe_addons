@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Fail if a published store config is not what the source renders to.
 
-The sync is automated (see ``render_store_config.py`` and the shared
-ga-ops ``addon-publish.yml``). This is the proof that it landed: it re-renders
+The sync is automated (see ``render_store_config.py`` and
+``.github/workflows/addon-store-lockstep.yml``). This is the proof that it landed: it re-renders
 the source and compares, key by key, against what the store actually serves.
 
 It replaces the per-add-on ``verify_vibe_schema.py``, which compared only the
