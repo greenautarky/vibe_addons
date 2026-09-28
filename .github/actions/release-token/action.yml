@@ -1,0 +1,178 @@
+# The credential every add-on release uses to open its downstream PRs — the
+# store PR here and the bake-pin PR on ha-operating-system — defined ONCE.
+#
+# Used by addon-store-lockstep.yml in this repository (every add-on except
+# ga_manager) and by ga_manager's own publish workflow, so the two can never
+# disagree about which credential they use or what happens when it is missing.
+#
+# It lives in this PUBLIC repository because the lockstep workflow does: a
+# public caller cannot use an action or reusable workflow from a private
+# repository, while a private caller can use a public one. Nothing in this file
+# is secret; the secrets arrive as inputs from the calling repository.
+#
+# WHY A GITHUB APP. A PR opened with GITHUB_TOKEN starts no workflow runs, so
+# it can never satisfy a required check — which is what an automatically opened
+# bake-pin PR needs. An App installation token does start them, lives one hour,
+# is minted per job, is limited to the repositories below and belongs to no
+# person.
+#
+# Selection, in order:
+#   app-id AND app-private-key  -> an App installation token (mode=app)
+#   only ONE of the two         -> hard error (half-configured is a mistake,
+#                                  not a reason to quietly use something else)
+#   neither, fallback-pat set   -> DOWNSTREAM_SYNC_PAT, with a LOUD ::warning::
+#                                  and a line in the run summary (mode=pat).
+#                                  Transitional: removed once no caller needs it.
+#   nothing at all              -> hard error. Calling this IS the statement
+#                                  that a PR should be opened; a green run that
+#                                  opened nothing is the failure it prevents.
+#
+# tests/release_token/run_fixtures.py drives the LIVE scripts of this file.
+name: GA release token
+description: Mint the ga-release-bot App token (or, transitionally and loudly, fall back to DOWNSTREAM_SYNC_PAT).
+
+inputs:
+  app-id:
+    description: "secrets.GA_RELEASE_APP_ID — the App's Client ID (Iv23…) or its numeric App ID; the action accepts either"
+    required: false
+    default: ""
+  app-private-key:
+    description: "secrets.GA_RELEASE_APP_PRIVATE_KEY — the App's PEM private key"
+    required: false
+    default: ""
+  fallback-pat:
+    description: "secrets.DOWNSTREAM_SYNC_PAT — transitional fallback only"
+    required: false
+    default: ""
+  repositories:
+    description: >-
+      Comma-separated repositories (in greenautarky) the App token is limited
+      to. "*" = the whole installation (the setup smoke test only, to measure
+      what the App is installed on).
+    required: false
+    default: "vibe_addons,ha-operating-system"
+
+outputs:
+  token:
+    description: "The token to use for git + gh against the repositories above"
+    value: ${{ steps.resolve.outputs.token }}
+  mode:
+    description: "app | pat — which credential was used"
+    value: ${{ steps.select.outputs.mode }}
+
+runs:
+  using: composite
+  steps:
+    - name: Select the credential
+      id: select
+      shell: bash
+      env:
+        APP_ID: ${{ inputs.app-id }}
+        APP_KEY: ${{ inputs.app-private-key }}
+        PAT: ${{ inputs.fallback-pat }}
+      run: |
+        set -euo pipefail
+        have_id=0; have_key=0
+        [ -n "$(printf '%s' "${APP_ID:-}" | tr -d '[:space:]')" ] && have_id=1
+        [ -n "$(printf '%s' "${APP_KEY:-}" | tr -d '[:space:]')" ] && have_key=1
+        if [ "$have_id" = 1 ] && [ "$have_key" = 1 ]; then
+          echo "mode=app" >> "$GITHUB_OUTPUT"
+          echo "release credential: GitHub App (GA_RELEASE_APP_ID + GA_RELEASE_APP_PRIVATE_KEY)"
+          exit 0
+        fi
+        if [ "$have_id" != "$have_key" ]; then
+          missing=GA_RELEASE_APP_PRIVATE_KEY; [ "$have_id" = 0 ] && missing=GA_RELEASE_APP_ID
+          echo "::error::Only half of the GitHub App credential is visible to this repository: ${missing} is empty or unset. Refusing to fall back to DOWNSTREAM_SYNC_PAT behind a half-configured App — make both App secrets visible to this repository."
+          exit 1
+        fi
+        # No App. The transitional fallback — announced at the level of the
+        # event, not at INFO: a silent substitution is how a configuration
+        # error turns into an outage nobody sees.
+        clean="$(printf '%s' "${PAT:-}" | tr -d '[:space:]')"
+        if [ -z "$clean" ]; then
+          echo "::error::No release credential: GA_RELEASE_APP_ID / GA_RELEASE_APP_PRIVATE_KEY are not visible to this repository and DOWNSTREAM_SYNC_PAT is empty or unset. This step was called, so a downstream PR is expected — refusing to report success for a no-op."
+          exit 1
+        fi
+        if [ "${#clean}" -ne "${#PAT}" ]; then
+          echo "::warning::DOWNSTREAM_SYNC_PAT contains whitespace (probably a trailing newline from pasting). Using the trimmed value."
+        fi
+        echo "::add-mask::$clean"
+        echo "::warning::FALLBACK: the GitHub App secrets (GA_RELEASE_APP_ID + GA_RELEASE_APP_PRIVATE_KEY) are not visible to this repository, so this release used the personal token DOWNSTREAM_SYNC_PAT instead. That is a transitional path — make the two App secrets visible to this repository."
+        {
+          echo "> [!WARNING]"
+          echo "> **Release credential: FALLBACK to \`DOWNSTREAM_SYNC_PAT\`** — the ga-release-bot App secrets are not visible to this repository."
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "mode=pat" >> "$GITHUB_OUTPUT"
+        echo "pat=$clean" >> "$GITHUB_OUTPUT"
+
+    # Pinned to a commit, not a tag: this step holds the App's private key.
+    # v3.2.0 = bcd2ba49218906704ab6c1aa796996da409d3eb1 (2026-05-12).
+    # `client-id` because `app-id` is deprecated in v3 and would print a
+    # deprecation warning on every run, next to the one warning that matters.
+    # The action passes either to the same JWT issuer, so a numeric App ID in
+    # GA_RELEASE_APP_ID works too.
+    - name: Mint the ga-release-bot installation token
+      id: app
+      if: steps.select.outputs.mode == 'app'
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ inputs.app-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: greenautarky
+        repositories: ${{ inputs.repositories != '*' && inputs.repositories || '' }}
+        # Ask for exactly what the downstream PRs need. The App's own settings
+        # are the ceiling; this is the floor of what one job can do with it.
+        permission-contents: write
+        permission-pull-requests: write
+
+    - name: Resolve the token
+      id: resolve
+      shell: bash
+      env:
+        MODE: ${{ steps.select.outputs.mode }}
+        APP_TOKEN: ${{ steps.app.outputs.token }}
+        PAT_TOKEN: ${{ steps.select.outputs.pat }}
+        REPOS: ${{ inputs.repositories }}
+      run: |
+        set -euo pipefail
+        case "${MODE:-}" in
+          app)
+            if [ -z "${APP_TOKEN:-}" ]; then
+              echo "::error::The GitHub App secrets are set but no installation token came back for: ${REPOS}. Is ga-release-bot installed on each of them?"
+              exit 1
+            fi
+            echo "token=${APP_TOKEN}" >> "$GITHUB_OUTPUT"
+            echo "release credential: ga-release-bot App token for ${REPOS}"
+            ;;
+          pat)
+            [ -n "${PAT_TOKEN:-}" ] || { echo "::error::fallback selected but the PAT is empty"; exit 1; }
+            echo "token=${PAT_TOKEN}" >> "$GITHUB_OUTPUT"
+            echo "release credential: DOWNSTREAM_SYNC_PAT (fallback, see the warning above)"
+            ;;
+          *)
+            echo "::error::no credential mode selected (got '${MODE:-}')"
+            exit 1
+            ;;
+        esac
+
+    # PRESENT IS NOT ALIVE. A non-empty PAT can still be revoked or expired, and
+    # then fails LATER — at the push, after the image is already published. Ask
+    # GitHub once, here, and say who the token belongs to (never its value).
+    # PAT path only: an App token was just minted by GitHub, so it is alive by
+    # construction, and an installation token cannot call /user anyway.
+    - name: The fallback PAT is accepted by GitHub
+      if: steps.select.outputs.mode == 'pat'
+      shell: bash
+      env:
+        TOKEN: ${{ steps.resolve.outputs.token }}
+      run: |
+        set -euo pipefail
+        code="$(curl -sS -o /tmp/release-token-user.json -w '%{http_code}' \
+                  -H "Authorization: Bearer ${TOKEN}" "${GITHUB_API_URL:-https://api.github.com}/user" || echo 000)"
+        if [ "$code" != 200 ]; then
+          echo "::error::DOWNSTREAM_SYNC_PAT is set but GitHub does not accept it (HTTP ${code}) — revoked, expired or malformed. Rotate the secret in the calling repository, or make the App secrets visible to it."
+          exit 1
+        fi
+        who="$(jq -r '.login // empty' /tmp/release-token-user.json)"
+        rm -f /tmp/release-token-user.json
+        echo "fallback PAT accepted by GitHub; owner: ${who:-unknown}"

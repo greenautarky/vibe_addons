@@ -4,9 +4,10 @@
 This repository is public and it is a code path onto every device: a fresh
 gateway installs its management add-on from here at first boot, before fleet
 management is involved. Whoever can change an `image:` line here chooses what a
-new device runs. Merging into main is automated (the lockstep jobs open and merge
-their own PRs), so the protection cannot be a reviewer — it is this check, run
-on every pull request and required by the main-branch ruleset.
+new device runs. Store syncs are opened by automation (addon-store-lockstep.yml
+and ga_manager's publish) and merged by a person, never by automation; the
+protection a merge cannot skip, reviewed or not, is this check, run on every
+pull request and required by the main-branch ruleset.
 
 Rules, fail-closed:
   * every add-on directory (a directory holding config.yaml / config.yml /

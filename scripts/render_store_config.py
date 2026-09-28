@@ -11,8 +11,9 @@ containment (#555) became undeployable fleet-wide (retro 2026-07-22, #566).
 ``ga_manager`` already solved this: its CI renders the store entry from its
 source and pushes it (``scripts/render_vibe_config.py``, full-body sync). This
 is the same idea generalised so the shared add-on publish pipeline can do it
-for every add-on, and it lives HERE because this repo is public — the private
-ga-ops workflow can read it without handing a cross-repo token to every caller.
+for every add-on, and it lives HERE because this repo is public — the lockstep
+workflow (.github/workflows/addon-store-lockstep.yml, also here) reads it from
+a plain clone, whatever repository called it.
 
 The store entry is the source config plus exactly two additions, each applied
 only when missing, so rendering is idempotent:
