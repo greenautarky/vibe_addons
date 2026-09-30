@@ -1,24 +1,38 @@
-name: Mirror dongle-flasher image to GHCR (greenautarky)
+name: Build dongle-flasher image to GHCR (greenautarky)
 
-# The SONOFF dongle-flasher is a VENDOR image (no Dockerfile we build). To ship a
-# GA config change (e.g. dropping host_network) we must bump the addon version —
-# and the Supervisor uses the addon version AS the image tag (docker/addon.py:
-# `tag=str(self.addon.version)`), so a bumped version needs an image at that tag.
-# The vendor tags stop at 1.3.4, so we MIRROR the vendor image byte-for-byte to
-# `ghcr.io/greenautarky/ga_dongle_flasher-<arch>:<version>` — no rebuild, just a
-# registry-to-registry copy of the exact same layers. See ga-ihost-docs ADR-0015
-# / Odoo #700 and vibe_addons#94.
+# The SONOFF dongle-flasher is a VENDOR image: the vendor publishes no
+# Dockerfile, and its tags stop at 1.3.4 on an Alpine 3.21 base from 2025-11.
+# Up to 1.3.5 this workflow copied those vendor bytes unchanged to
+# `ghcr.io/greenautarky/ga_dongle_flasher-<arch>:<version>`. From 1.3.6 it
+# REBUILDS instead: the vendor image is the base, and .github/flasher-image/
+# Dockerfile refreshes only the operating-system layer on top of it (Alpine
+# package upgrade, current nodejs/npm patch release, current tempio). The vendor
+# application in /workspace is not touched.
 #
-# `SOURCE_VERSION` is the vendor tag whose bytes we copy; `version` in
-# config.json is the GA tag we publish them under. They differ on purpose: the
-# GA bump carries a config change, not new image content.
+# The Supervisor uses the add-on version AS the image tag (docker/addon.py:
+# `tag=str(self.addon.version)`), so every new image needs a new version in
+# config.json. `SOURCE_VERSION` is the vendor tag we build on; `version` in
+# config.json is the GA tag we publish under. They differ on purpose.
+#
+# Flow per arch: build -> CVE gate on the BUILT image -> push (main only).
+# A pull request runs the build and the gate, and never pushes.
+#
+# The Dockerfile lives under .github/ on purpose: the store image gate forbids a
+# Dockerfile inside an add-on directory (the Supervisor would build it on the
+# device instead of pulling the published image).
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "hassio-ihost-sonoff-dongle-flasher/config.json"
+      - ".github/flasher-image/**"
+      - ".github/workflows/mirror-flasher-image.yaml"
   push:
     branches: [main]
     paths:
       - "hassio-ihost-sonoff-dongle-flasher/config.json"
+      - ".github/flasher-image/**"
       - ".github/workflows/mirror-flasher-image.yaml"
 
 permissions:
@@ -28,18 +42,33 @@ permissions:
 env:
   SRC_NS: ghcr.io/ihost-open-source-project
   SRC_NAME: hassio-ihost-sonoff-dongle-flasher
-  SOURCE_VERSION: "1.3.4"          # vendor tag to copy bytes from
+  SOURCE_VERSION: "1.3.4"          # vendor tag we build on
   DST_NS: ghcr.io/greenautarky
   DST_NAME: ga_dongle_flasher
   ADDON_DIR: hassio-ihost-sonoff-dongle-flasher
 
 jobs:
-  mirror:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        arch: [armv7, aarch64, amd64]
+        include:
+          - arch: armv7
+            platform: linux/arm/v7
+            goarch: arm
+          - arch: aarch64
+            platform: linux/arm64
+            goarch: arm64
+          - arch: amd64
+            platform: linux/amd64
+            goarch: amd64
+    env:
+      # Pushing is decided in one place. Only a push to main (or a manual run on
+      # main) publishes; a pull request builds and gates but never pushes.
+      PUBLISH: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
+      CANDIDATE: ga-flasher-candidate:${{ matrix.arch }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,7 +82,10 @@ jobs:
           ver=$(python3 -c "import json,sys; print(json.load(open('$f'))['version'])")
           if [ -z "${ver:-}" ]; then echo "::error::no version in $f"; exit 1; fi
           echo "version=$ver" >>"$GITHUB_OUTPUT"
-          echo "GA target version: $ver"
+          echo "GA target version: $ver (publish: ${PUBLISH})"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -65,44 +97,85 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # CVE GATE on the VENDOR image BEFORE we republish it. This is a byte-mirror
-      # of a third-party image we don't build, so we cannot patch it — but a
-      # FIXABLE HIGH/CRITICAL means a newer vendor tag exists with the fix, so the
-      # gate blocks the mirror until SOURCE_VERSION is bumped to the patched tag.
-      # `--ignore-unfixed` so an unfixable vendor CVE cannot permanently wedge the
-      # mirror. trivy reads the package DB (arch-independent), so scanning the
-      # armv7 image from an amd64 runner is fine.
-      # COVERAGE ASSERTION (scripts/cve-gate.sh): a bare `trivy --exit-code 1`
-      # returns SUCCESS when it matches ZERO OS packages — an empty report is
-      # indistinguishable from a clean one. Measured 2026-08-20: the previous
-      # command here returned exit 0 on an image with 143 real binaries and no
-      # package DB. cve-gate.sh adds `--list-all-pkgs`, counts what trivy
-      # actually evaluated, and exits 2 (BROKEN SCAN, never a pass) if that is
-      # zero or below COVERAGE_MIN_PCT of the image's own apk/dpkg DB. Same
-      # fail-closed rule as scan-cves.sh in ha-operating-system. The fixtures in
-      # tests/cve-gate/ re-prove it red AND green on every change.
-      - name: CVE GATE — vendor image (fixable HIGH/CRITICAL blocks the mirror)
+      - name: Refuse to overwrite a published version
+        if: env.PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          SRC="${SRC_NS}/${SRC_NAME}-${{ matrix.arch }}:${SOURCE_VERSION}"
-          PKG_TYPES=os,library INDEPENDENT_COUNT=off scripts/cve-gate.sh "$SRC"
-
-      - name: Mirror ${{ matrix.arch }} vendor:${{ env.SOURCE_VERSION }} -> GA:${{ steps.ver.outputs.version }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          SRC="${SRC_NS}/${SRC_NAME}-${{ matrix.arch }}:${SOURCE_VERSION}"
           DST="${DST_NS}/${DST_NAME}-${{ matrix.arch }}:${{ steps.ver.outputs.version }}"
-          echo ">>> copy $SRC -> $DST (byte-identical, no rebuild)"
-          # imagetools create copies the manifest + layers registry-to-registry
-          # without pulling the platform locally. Also publish :latest per arch.
-          docker buildx imagetools create -t "$DST" "$SRC"
-          docker buildx imagetools create -t "${DST_NS}/${DST_NAME}-${{ matrix.arch }}:latest" "$SRC"
+          # The version IS the tag the OS and the store pin. Rewriting an
+          # existing tag would put new bytes behind a version already tested.
+          if docker buildx imagetools inspect "$DST" >/dev/null 2>&1; then
+            echo "::error::${DST} already exists — bump the version in ${ADDON_DIR}/config.json"
+            exit 1
+          fi
+
+      - name: Build ${{ matrix.arch }} on vendor:${{ env.SOURCE_VERSION }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .github/flasher-image
+          platforms: ${{ matrix.platform }}
+          load: true
+          push: false
+          provenance: false
+          tags: ${{ env.CANDIDATE }}
+          build-args: |
+            SRC_IMAGE=${{ env.SRC_NS }}/${{ env.SRC_NAME }}-${{ matrix.arch }}:${{ env.SOURCE_VERSION }}
+            BUILD_ARCH=${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.version }}
+            io.hass.version=${{ steps.ver.outputs.version }}
+
+      # CVE GATE on the image we are about to publish (policy D1, 2026-09-29):
+      # a CRITICAL finding with a fix available blocks; HIGH is reported below,
+      # never blocking. The gate scans the LOCALLY BUILT candidate, so there is
+      # no registry platform lookup — the lookup that failed every run since
+      # 2026-08-20 ("no child with platform linux/amd64" on an armv7-only
+      # vendor index). COVERAGE ASSERTION (scripts/cve-gate.sh): trivy must have
+      # evaluated >0 OS packages and >= COVERAGE_MIN_PCT of the image's own
+      # package DB, or the result is BROKEN (exit 2), never a pass. The fixtures
+      # in tests/cve-gate/ re-prove it red AND green on every change.
+      - name: CVE GATE — built image (fixable CRITICAL blocks the push)
+        shell: bash
+        run: |
+          set -euo pipefail
+          SEVERITY=CRITICAL PKG_TYPES=os,library scripts/cve-gate.sh "$CANDIDATE"
+
+      - name: CVE report — HIGH (report only, never blocks)
+        shell: bash
+        run: |
+          set -uo pipefail
+          rc=0
+          SEVERITY=HIGH PKG_TYPES=os,library GATE_SUMMARY=./cve-high-summary.json \
+            scripts/cve-gate.sh "$CANDIDATE" || rc=$?
+          # 1 = findings (reported above, not blocking). 2 = the scan itself is
+          # broken, which is never waved through.
+          if [ "$rc" -eq 2 ]; then echo "::error::HIGH report scan is BROKEN"; exit 2; fi
+          [ "$rc" -eq 1 ] && echo "::warning::fixable HIGH findings in ${{ matrix.arch }} — reported, not blocking (D1)"
+          exit 0
+
+      - name: Push ${{ matrix.arch }} -> GA:${{ steps.ver.outputs.version }}
+        if: env.PUBLISH == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          DST="${DST_NS}/${DST_NAME}-${{ matrix.arch }}"
+          docker tag "$CANDIDATE" "${DST}:${{ steps.ver.outputs.version }}"
+          docker tag "$CANDIDATE" "${DST}:latest"
+          docker push "${DST}:${{ steps.ver.outputs.version }}"
+          docker push "${DST}:latest"
 
       - name: Verify published tag exists and is the right platform
+        if: env.PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
           DST="${DST_NS}/${DST_NAME}-${{ matrix.arch }}:${{ steps.ver.outputs.version }}"
-          docker buildx imagetools inspect "$DST"
+          got=$(docker buildx imagetools inspect "$DST" --format '{{json .Image}}' | jq -r '.architecture')
+          echo "published ${DST}: architecture=${got}"
+          if [ "$got" != "${{ matrix.goarch }}" ]; then
+            echo "::error::${DST} is ${got}, expected ${{ matrix.goarch }}"
+            exit 1
+          fi
