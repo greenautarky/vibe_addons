@@ -1,5 +1,20 @@
 # Changelog  
 
+## 1.3.6 — rebuilt operating-system layer (2026-09-30)
+### Changed (GreenAutarky)
+- **The image is now rebuilt instead of copied.** Up to 1.3.5, CI copied the vendor
+  `-{arch}:1.3.4` image byte-for-byte. From 1.3.6, CI (`mirror-flasher-image.yaml`)
+  builds `ga_dongle_flasher-{arch}` on top of that vendor image and refreshes only the
+  operating-system layer (`.github/flasher-image/Dockerfile`):
+  - all Alpine 3.21 packages upgraded to the current 3.21 releases;
+  - `nodejs` / `npm` moved from the vendor's exact pin to the current Alpine 3.21
+    patch release (Node 22.22.2 → 22.23.x, same major and ABI);
+  - `tempio` replaced by upstream release 2026.07.0 (sha256-verified).
+  The vendor application in `/workspace` is unchanged, as are the add-on options,
+  mappings and privileges.
+- CI now builds and checks the image on every pull request and pushes only from
+  `main`; it refuses to overwrite a version tag that already exists.
+
 ## 1.3.5 — GA security config (2026-08-19)
 ### Changed (GreenAutarky)
 - **Image moved to `ghcr.io/greenautarky/ga_dongle_flasher-{arch}`, version bumped
