@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.222.0"
+version: "0.223.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -103,8 +103,9 @@ options:
   # here (test_options_and_schema_agree_on_their_keys — a key absent from
   # options is the same "add-on will not load" class as an unknown type).
   # The defaults are the INERT state: flag off, empty connection values,
-  # empty allowlist. Real values (per-device credential minted by the
-  # fleet-manager, host, tables, flag) arrive via the fm addon-config push.
+  # empty allowlist. Since 0.223.0 the per-device credential arrives as the
+  # `cloud_db` block of the creds-write bundle (/data, 0600) and WINS over
+  # these options; they are only the fallback while no block is present.
   cloud_push_enabled: false
   cloud_db_host: ""
   cloud_db_name: ""
