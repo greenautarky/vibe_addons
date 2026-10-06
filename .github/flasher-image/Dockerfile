@@ -3,14 +3,16 @@
 # The vendor publishes no Dockerfile we could build from, and its image stops at
 # 1.3.4 on an Alpine 3.21 base from 2025-11. Instead of copying those bytes
 # unchanged (the old mirror), we take the vendor image as the base and refresh
-# only the operating-system layer on top of it:
+# the operating-system layer on top of it, plus one targeted npm package:
 #   * `apk upgrade` — every Alpine 3.21 package to the current 3.21 release;
 #   * nodejs / npm — the vendor pinned exact versions in /etc/apk/world, which
 #     `apk upgrade` honours; re-adding them unpinned lets them move to the
 #     current 3.21 patch release (same Node 22 major, same ABI);
 #   * tempio — the helper binary from the Home Assistant base image, replaced by
-#     a current upstream release, verified against a pinned sha256.
-# The vendor application (/workspace) is not touched.
+#     a current upstream release, verified against a pinned sha256;
+#   * proxy-addr — one npm dependency of the vendor application (via express),
+#     raised to a fixed release (second RUN below).
+# The vendor application code (/workspace/src) is not touched.
 ARG SRC_IMAGE
 FROM ${SRC_IMAGE}
 
@@ -33,3 +35,22 @@ RUN set -eux; \
     install -m 0755 /tmp/tempio /usr/bin/tempio; \
     rm -f /tmp/tempio; \
     node --version; npm --version; tempio -h >/dev/null 2>&1 || true
+
+# proxy-addr: the vendor app's express depends on proxy-addr ^2.0.7, installed
+# once at /workspace/node_modules/proxy-addr. 2.0.8 declares the same
+# dependencies (forwarded 0.2.0, ipaddr.js 1.9.1), so the package directory is
+# swapped for the registry tarball, verified against its pinned npm integrity.
+# Deliberately NOT `npm install`: that reconciles the whole vendor tree against
+# its lockfile (devDependencies, the native serialport build) — far more than
+# one package. npm-pin.js also updates the package-lock entry, so lockfile
+# readers see what node_modules holds, and FAILS the build unless every copy of
+# proxy-addr in the image is >= PROXY_ADDR_VERSION and express resolves it.
+ARG PROXY_ADDR_VERSION=2.0.8
+ARG PROXY_ADDR_INTEGRITY=sha512-5nnx0yGyVUcY6t9RnWcARWtwT9F1D8O9rt08htPvnd49W1IgZtmLkhu9WfMzQj1cFxjHIO6connUNVW5k7AVyQ==
+COPY npm-pin.js /tmp/npm-pin.js
+RUN set -eux; \
+    curl -fsSL -o /tmp/pkg.tgz \
+      "https://registry.npmjs.org/proxy-addr/-/proxy-addr-${PROXY_ADDR_VERSION}.tgz"; \
+    node /tmp/npm-pin.js install proxy-addr "${PROXY_ADDR_VERSION}" "${PROXY_ADDR_INTEGRITY}" /tmp/pkg.tgz; \
+    node /tmp/npm-pin.js assert proxy-addr "${PROXY_ADDR_VERSION}"; \
+    rm -f /tmp/pkg.tgz /tmp/npm-pin.js

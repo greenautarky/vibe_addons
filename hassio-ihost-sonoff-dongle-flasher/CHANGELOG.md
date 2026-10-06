@@ -1,5 +1,15 @@
 # Changelog  
 
+## 1.3.7 — update proxy-addr to 2.0.8 (2026-10-06)
+### Changed (GreenAutarky)
+- Update `proxy-addr` (a dependency of `express` in the vendor application) from
+  2.0.7 to 2.0.8. The image build replaces only that package in
+  `/workspace/node_modules`, verified against the npm registry integrity hash, and
+  updates its `package-lock.json` entry to match. The build fails unless every copy
+  of `proxy-addr` in the image is at least 2.0.8 and `express` loads it.
+- Rebuilt on the current Alpine 3.21 packages (same Dockerfile steps as 1.3.6).
+  The vendor application code, add-on options, mappings and privileges are unchanged.
+
 ## 1.3.6 — rebuilt operating-system layer (2026-09-30)
 ### Changed (GreenAutarky)
 - **The image is now rebuilt instead of copied.** Up to 1.3.5, CI copied the vendor
