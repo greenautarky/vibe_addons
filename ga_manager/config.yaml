@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.225.0"
+version: "0.229.0"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -113,6 +113,10 @@ options:
   cloud_db_password: ""
   cloud_db_port: 5432
   cloud_tables: []
+  # 0.227.0: which drain empties the cloud outbox — db (default, the
+  # PostgreSQL writer) or mqtt (fleet broker, cloud/<table>). The bundle's
+  # top-level cloud_transport wins over this option.
+  cloud_transport: db
 schema:
   log_level: list(trace|debug|info|notice|warning|error|fatal)
   health_check:
@@ -157,3 +161,4 @@ schema:
   cloud_db_port: int(1,65535)
   cloud_tables:
     - "match(^[a-z_][a-z0-9_]*$)"
+  cloud_transport: list(db|mqtt)
