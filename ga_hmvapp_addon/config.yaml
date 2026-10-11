@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA HMVapp Addon"
-version: 2.5.3
+version: 2.6.0
 slug: "ga_hmvapp_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_hmvapp_addon-{arch}
@@ -56,6 +56,9 @@ options:
   publish_opening_degree: false
   # ga/hm/rooms/<room_key>/desired_mode (auto | heat | off), room = climate.<room_key>
   publish_mode_requests: false
+  # Output level of the add-on (2.6.0, Odoo #1225). warning = faults only;
+  # info/debug bring back the per-cycle decision trace for a diagnosis.
+  log_level: warning
 schema:
   INFLUXDB_HOST: str
   INFLUXDB_PORT: int
@@ -80,6 +83,7 @@ schema:
   GD_DIRECTORY: str
   publish_opening_degree: bool
   publish_mode_requests: bool
+  log_level: list(debug|info|warning|error)?
 init: false
 #hassio_api: true
 #hassio_role: default
