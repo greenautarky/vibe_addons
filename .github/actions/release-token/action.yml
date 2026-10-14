@@ -51,6 +51,15 @@ inputs:
       what the App is installed on).
     required: false
     default: "vibe_addons,ha-operating-system"
+  workflows:
+    description: >-
+      "true" adds the workflows: write permission to the token. Needed ONLY to
+      create a tag/ref on a commit whose .github/workflows differs from the
+      default-branch tip (GitHub answers 403 "Resource not accessible by
+      integration" otherwise; ga-ops release train, 2026-10-13). Default off:
+      every other consumer keeps contents + pull-requests only.
+    required: false
+    default: "false"
 
 outputs:
   token:
@@ -124,6 +133,7 @@ runs:
         # are the ceiling; this is the floor of what one job can do with it.
         permission-contents: write
         permission-pull-requests: write
+        permission-workflows: ${{ inputs.workflows == 'true' && 'write' || '' }}
 
     - name: Resolve the token
       id: resolve
