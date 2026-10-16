@@ -184,8 +184,10 @@ print("static wiring:")
 mint = steps["app"].get("uses", "")
 check("create-github-app-token is pinned to a full commit SHA",
       bool(re.fullmatch(r"actions/create-github-app-token@[0-9a-f]{40}", mint)), mint)
-check("the mint step asks only for contents + pull-requests write",
-      {k for k in steps["app"].get("with", {}) if k.startswith("permission-")} == {"permission-contents", "permission-pull-requests"})
+check("the mint step asks only for contents + pull-requests write, plus workflows ONLY behind the opt-in input",
+      {k for k in steps["app"].get("with", {}) if k.startswith("permission-")} == {"permission-contents", "permission-pull-requests", "permission-workflows"}
+      and steps["app"]["with"]["permission-workflows"] == "${{ inputs.workflows == 'true' && 'write' || '' }}"
+      and action["inputs"]["workflows"]["default"] == "false")
 
 alive = [x for x in action["runs"]["steps"] if "/user" in (x.get("run") or "")]
 check("a PAT fallback is asked once whether GitHub accepts it (and only on the PAT path)",
