@@ -1,5 +1,9 @@
 # Changelog  
 
+## 1.3.8 — rebuild for brotli-libs (CVE-2026-111497) (2026-11-04)
+### Changed (GreenAutarky)
+- Rebuild only: the image's `apk upgrade` pulls brotli-libs 1.1.1-r0, which fixes CVE-2026-111497 (CRITICAL). No functional change. Odoo #1431.
+
 ## 1.3.7 — update proxy-addr to 2.0.8 (2026-10-06)
 ### Changed (GreenAutarky)
 - Update `proxy-addr` (a dependency of `express` in the vendor application) from
