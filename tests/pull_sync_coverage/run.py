@@ -17,7 +17,7 @@ render, guard = step("Render each add-on"), step("Fail if any add-on")
 CFG = "name: x\nversion: 1.0.0\nslug: x\n"
 
 def run(readable):
-    d = tempfile.mkdtemp(dir=os.environ.get("TMPDIR", "."))
+    d = tempfile.mkdtemp()
     os.makedirs(f"{d}/bin"); out = f"{d}/out"
     open(f"{d}/bin/gh", "w").write(
         '#!/bin/bash\ncase "$*" in\n' +
