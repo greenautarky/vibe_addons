@@ -17,6 +17,7 @@ on:
       - "tests/store_sync_gate/**"
       - "tests/resolve_addon_base/**"
       - "tests/assert_base_matches/**"
+      - "tests/pull_sync_coverage/**"
       - ".github/workflows/store-sync-gate.yaml"
       # the gate now also reads these two, because they are what it guards:
       # a call site that stops passing --name must re-run the gate that says so.
@@ -28,6 +29,7 @@ on:
       - "tests/store_sync_gate/**"
       - "tests/resolve_addon_base/**"
       - "tests/assert_base_matches/**"
+      - "tests/pull_sync_coverage/**"
       - ".github/workflows/store-sync-gate.yaml"
       # the gate now also reads these two, because they are what it guards:
       # a call site that stops passing --name must re-run the gate that says so.
@@ -62,3 +64,6 @@ jobs:
       # has to be right.
       - name: Declared-vs-built base fixtures (must_fail + must_pass)
         run: python3 tests/assert_base_matches/run_fixtures.py
+      # store-pull-sync must end RED when a source is unreadable (#1594).
+      - name: Pull-sync unreadable-source fixtures
+        run: python3 tests/pull_sync_coverage/run.py

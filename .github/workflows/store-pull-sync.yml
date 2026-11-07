@@ -121,11 +121,8 @@ jobs:
             exit 1
           fi
           echo "inspected ${inspected} add-on(s)"
-          if [ -n "${unreadable}" ]; then
-            echo "::warning::source config unreadable for:${unreadable}"
-            echo "::warning::those add-ons were NOT compared this run"
-          fi
           echo "changed=${changed}" >> "$GITHUB_OUTPUT"
+          echo "unreadable=${unreadable}" >> "$GITHUB_OUTPUT"
 
       - name: Open a PR for what moved
         if: steps.render.outputs.changed != ''
@@ -158,3 +155,18 @@ jobs:
           gh pr create --base main --head "${br}" \
             --title "chore(store): pull the source config for${CHANGED}" \
             --body-file /tmp/pr-body.md
+
+      # A source that cannot be read was NOT compared. Passing with 2 of 5 made
+      # the drift sweep silently cover 2/5 for weeks (#1594): a fallback must be
+      # loud. Runs after the PR step (always()) so readable drift is still
+      # proposed, but the run itself ends RED.
+      - name: Fail if any add-on source was unreadable
+        if: always() && steps.render.outcome == 'success'
+        env:
+          UNREADABLE: ${{ steps.render.outputs.unreadable }}
+        run: |
+          if [ -n "${UNREADABLE}" ]; then
+            echo "::error::store-pull-sync could NOT read:${UNREADABLE} - those add-ons were not compared. The token cannot read private repos (github.token only sees this repo); see #1594."
+            exit 1
+          fi
+          echo "all add-on sources readable"
