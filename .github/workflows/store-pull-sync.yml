@@ -61,11 +61,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # DELIBERATELY ABSENT (#1594, decided 2026-11-09): ga_default_addon,
+          # ga_hmvapp_addon, ga_manager. Their source repos are private and this
+          # workflow's token cannot read them. They are NOT uncovered: each
+          # pushes its own store entry at publish time (default/hmvapp via
+          # ga-ops addon-publish.yml -> addon-store-lockstep.yml, ga_manager via
+          # its own publish.yaml lockstep job). Only PUBLIC sources belong here.
           # store_dir : source_repo : source_dir : image slug
           MAP="
-          ga_default_addon:ga_default_addon:default_addon:ga_default_addon
-          ga_hmvapp_addon:ga_hmvapp_addon:hmvapp_addon:ga_hmvapp_addon
-          ga_manager:ga_manager:ga_manager:ga_manager
           influxdb:influxDBv1:influxdb:ga_influxdbv1
           tailscale:ga_tailscale:tailscale:ga_tailscale
           "

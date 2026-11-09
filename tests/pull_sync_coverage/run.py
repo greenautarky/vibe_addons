@@ -29,14 +29,26 @@ def run(readable):
     script = render["run"].replace("/tmp/", d + "/")
     # renderer + store dirs come from the repo checkout
     shutil.copytree(ROOT, f"{d}/repo", ignore=shutil.ignore_patterns(".git"))
-    subprocess.run(["bash", "-c", script], cwd=f"{d}/repo", env=env, capture_output=True)
-    outs = dict(l.split("=", 1) for l in open(out).read().splitlines() if "=" in l)
+    global RENDER_RC
+    RENDER_RC = subprocess.run(["bash", "-c", script], cwd=f"{d}/repo", env=env, capture_output=True).returncode
+    txt = open(out).read() if os.path.exists(out) else ""  # zero-inspected exits before writing
+    outs = dict(l.split("=", 1) for l in txt.splitlines() if "=" in l)
     g = subprocess.run(["bash", "-c", guard["run"]], env=dict(env, UNREADABLE=outs.get("unreadable", "")), capture_output=True, text=True)
     return g.returncode, outs.get("unreadable", "")
 
-allsrc = ["ga_default_addon", "ga_hmvapp_addon", "ga_manager", "influxDBv1", "ga_tailscale"]
-rc, u = run(allsrc);                    ok1 = rc == 0 and u == ""
-print(f"all 5 readable -> guard rc={rc} unreadable='{u}'", "OK" if ok1 else "FAIL")
-rc, u = run(["influxDBv1", "ga_tailscale"]); ok2 = rc != 0 and "ga_manager" in u
-print(f"2 of 5 readable -> guard rc={rc} unreadable='{u.strip()}'", "OK" if ok2 else "FAIL")
-sys.exit(0 if ok1 and ok2 else 1)
+# Why the 3 private sources are NOT in the MAP (#1594, decided 2026-11-09):
+# this token cannot read them; they push via lockstep at publish time instead.
+# The sweep covers only the public sources, so 2/2 readable is the green state.
+PRIVATE = ["ga_default_addon", "ga_hmvapp_addon", "ga_manager"]
+PUBLIC = ["influxDBv1", "ga_tailscale"]
+rc, u = run(PUBLIC); ok1 = rc == 0 and u == ""
+print(f"2/2 public readable -> guard rc={rc} unreadable='{u}'", "OK" if ok1 else "FAIL")
+rc, u = run(["influxDBv1"]); ok2 = rc != 0 and "ga_tailscale" in u
+print(f"public source unreadable -> guard rc={rc} unreadable='{u.strip()}'", "OK" if ok2 else "FAIL")
+run([]); ok3 = RENDER_RC != 0  # render step itself fails closed on zero inspected
+print(f"nothing readable -> render rc={RENDER_RC}", "OK" if ok3 else "FAIL")
+# private sources must stay out of the MAP (they would end the run RED again)
+mapped = [r for r in PRIVATE if f":{r}:" in render["run"]]
+ok4 = not mapped
+print(f"private sources in MAP: {mapped}", "OK" if ok4 else "FAIL")
+sys.exit(0 if ok1 and ok2 and ok3 and ok4 else 1)
