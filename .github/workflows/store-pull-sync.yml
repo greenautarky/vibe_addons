@@ -172,7 +172,7 @@ jobs:
           UNREADABLE: ${{ steps.render.outputs.unreadable }}
         run: |
           if [ -n "${UNREADABLE}" ]; then
-            echo "::error::store-pull-sync could NOT read:${UNREADABLE} - those add-ons were not compared. Every listed source is public, so look for a renamed repo, a moved config.yaml or a GitHub API error (not missing access); see #1594."
+            echo "::error::store-pull-sync could NOT read:${UNREADABLE} - those add-ons were not compared. Possible causes: the source repo was renamed or made private (both return 404), its config.yaml moved, or a GitHub API error; see #1594."
             exit 1
           fi
           echo "all add-on sources readable"
