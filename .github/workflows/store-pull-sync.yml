@@ -12,8 +12,11 @@ name: store-pull-sync
 #
 # Here the direction is reversed. This repository owns the store entry, so it
 # reads each add-on's source config and writes its own file with its own
-# GITHUB_TOKEN. A public source needs no credential at all; a private one falls
-# back to the PAT, which lives HERE rather than in every producer.
+# GITHUB_TOKEN. Every source listed below is PUBLIC and needs no credential to
+# read. There is no private-source fallback: the three private add-ons are not
+# in this sweep at all (see DELIBERATELY ABSENT below; they push their own store
+# entry at publish time). Reading needs no PAT; the PAT matters only for opening
+# the PR, so that the required checks run on it.
 #
 # Same inversion ha-operating-system already made for the bake pin: "the OS
 # reads the public store itself... one cross-repo credential fewer, and the pin
@@ -169,7 +172,7 @@ jobs:
           UNREADABLE: ${{ steps.render.outputs.unreadable }}
         run: |
           if [ -n "${UNREADABLE}" ]; then
-            echo "::error::store-pull-sync could NOT read:${UNREADABLE} - those add-ons were not compared. The token cannot read private repos (github.token only sees this repo); see #1594."
+            echo "::error::store-pull-sync could NOT read:${UNREADABLE} - those add-ons were not compared. Possible causes: the source repo was renamed or made private (both return 404), its config.yaml moved, or a GitHub API error; see #1594."
             exit 1
           fi
           echo "all add-on sources readable"
