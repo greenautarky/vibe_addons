@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Watch Telemetry"
-version: "0.1.7"
+version: "0.1.10"
 slug: "ga_watch_telemetry"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_watch_telemetry-{arch}
@@ -39,9 +39,26 @@ options:
   # Initial poll interval. The dashboard's number entity overrides this at
   # runtime; this value only applies until the first change.
   poll_interval_minutes: 10
+  # --- high-resolution backfill (Odoo #1732) ---------------------------------
+  # Off by default: this is a SECOND write path, straight into InfluxDB, and it
+  # gets switched on deliberately. Home Assistant stamps every state with *now*,
+  # so the minutes the watch recorded cannot be back-filled through MQTT at all
+  # — this is the only place their real timestamps survive.
+  influx_backfill: false
+  influx_host: ""
+  influx_port: 8086
+  influx_database: ""
+  influx_user: ""
+  influx_password: ""
 schema:
   watch_mac: str
   watch_auth_key: password
   base_topic: str
   poll_interval_minutes: int(1,720)
+  influx_backfill: bool?
+  influx_host: str?
+  influx_port: int(1,65535)?
+  influx_database: str?
+  influx_user: str?
+  influx_password: password?
 init: false
