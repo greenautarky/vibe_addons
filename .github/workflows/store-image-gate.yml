@@ -1,9 +1,10 @@
 name: store-image-gate
 
-# Required check on main (ruleset). Store syncs are opened AND merged by
-# automation, so the guard is this check, not a reviewer. What must never
-# happen: a store entry pointing a device at an image outside our registry —
-# a fresh gateway installs from this store at first boot.
+# Required check on main (ruleset). Store syncs are opened by automation and
+# merged by a person — automation never merges them (one behaviour since
+# 2026-09-28). This check is what a merge cannot skip, reviewed or not. What
+# must never happen: a store entry pointing a device at an image outside our
+# registry — a fresh gateway installs from this store at first boot.
 #
 # pull_request_target, on purpose: the workflow AND the gate script always come
 # from main. The pull request's files are only READ as data (YAML/JSON, loaded
