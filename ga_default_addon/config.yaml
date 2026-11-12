@@ -6,7 +6,7 @@
 # `version` stays in lock-step with the GHCR image tag and with the OS bake list
 # (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Default Addon"
-version: 2.1.7
+version: 2.3.1
 slug: "ga_default_addon"
 codenotary: notary@greenautarky.com
 image: ghcr.io/greenautarky/ga_default_addon-{arch}
@@ -46,6 +46,10 @@ options:
   INFLUXDB_GD_DATABASE: gd_data
   INFLUXDB_PD_DATABASE: pd_data
   LOCAL_TZ: Europe/Berlin
+  # Local hours where the day / night averages of indoor temp, humidity, CO2
+  # (gd_data.average_pd) start. Two points per day, stamped at these hours.
+  PD_DAY_START_HOUR: 6
+  PD_NIGHT_START_HOUR: 22
   CHECK_INTERVAL: 10
   GD_DIRECTORY: /data/gd_data
   DATA_DURATION: 7d
@@ -89,6 +93,8 @@ schema:
   # ever set it, so PRESETBACK was permanently the default.
   FORECAST_PRESETBACK: str?
   LOCAL_TZ: str
+  PD_DAY_START_HOUR: int(0,23)?
+  PD_NIGHT_START_HOUR: int(0,23)?
   CHECK_INTERVAL: int
   GD_DIRECTORY: str
   DATA_DURATION: str
