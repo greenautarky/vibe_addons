@@ -327,18 +327,39 @@ jobs:
       # The pin PR goes green only after the store PR is merged — its
       # check-versions compares the pin with the store. It is opened now and NOT
       # waited for: waiting would hold this job for a human merge.
-      - name: Check out the OS bake pins
+      # Which ha-operating-system branch receives the pin PR. NEVER master: since
+      # 2026-11-12 master is not a release source (Thomas decision); pins live on
+      # release/1.5 and feat/1.6-haos18. Unset (or "master") = no pin PR, said
+      # loudly in an annotation and in the run summary — not a silent skip.
+      - name: Resolve the bake-pin base branch
+        id: pinbase
         env:
-          TOKEN: ${{ steps.token.outputs.token }}
+          OS_PIN_BASE: ${{ vars.OS_PIN_BASE }}
         run: |
           set -euo pipefail
-          git clone -q --depth 1 "https://x-access-token:${TOKEN}@github.com/greenautarky/ha-operating-system.git" .os
+          if [ -z "${OS_PIN_BASE:-}" ] || [ "$OS_PIN_BASE" = "master" ]; then
+            echo "::warning title=no bake-pin PR opened::the store sync runs, but NO bake-pin PR is opened: repo variable OS_PIN_BASE is unset (or master) and master is no longer a release source. Pin by hand on release/1.5 or feat/1.6-haos18, or set OS_PIN_BASE."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            echo "base=${OS_PIN_BASE}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the OS bake pins
+        if: steps.pinbase.outputs.ok == 'true'
+        env:
+          TOKEN: ${{ steps.token.outputs.token }}
+          OS_PIN_BASE: ${{ steps.pinbase.outputs.base }}
+        run: |
+          set -euo pipefail
+          git clone -q --depth 1 --branch "$OS_PIN_BASE" "https://x-access-token:${TOKEN}@github.com/greenautarky/ha-operating-system.git" .os
 
       # Which addon-images.json entry is this add-on? Matched by IMAGE, not by
       # name: the keys are not the slugs (ga_mosquitto is `mosquitto`), but the
       # image is exactly what the bake pulls. tests/lockstep_bake_pin drives it.
       - name: Find this add-on's bake pin
         id: pinkey
+        if: steps.pinbase.outputs.ok == 'true'
         env:
           PINS_FILE: .os/buildroot-external/package/hassio/addon-images.json
           IMAGE: ${{ inputs.image_ns || 'ghcr.io/greenautarky' }}/${{ inputs.addon_slug }}-{arch}
@@ -400,13 +421,14 @@ jobs:
           SRC: ${{ inputs.addon_repo || github.event.repository.name }}
           STORE_URL: ${{ steps.pr.outputs.url }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          OS_PIN_BASE: ${{ steps.pinbase.outputs.base }}
         run: |
           set -euo pipefail
           cd .os
           f=buildroot-external/package/hassio/addon-images.json
           if [ "$CUR" = "$VER" ]; then
             echo "addon-images.json already pins ${KEY} at ${VER} — no PR needed"
-            echo "verify_ref=origin/master" >> "$GITHUB_OUTPUT"
+            echo "verify_ref=origin/${OS_PIN_BASE}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           tmp=$(mktemp)
@@ -428,7 +450,7 @@ jobs:
             "Merge the store PR FIRST. \`check-versions\` compares this pin with the store and stays red until the store carries \`${VER}\`; re-run it after the store merge. Merging only one of the two puts the store and the bake out of step." \
             > /tmp/pin-pr-body.md
           open_pr() {
-            gh pr list --repo greenautarky/ha-operating-system --head "$br" --base master \
+            gh pr list --repo greenautarky/ha-operating-system --head "$br" --base "$OS_PIN_BASE" \
               --state open --json url -q '.[0].url // empty'
           }
           url="$(open_pr || true)"
@@ -436,7 +458,7 @@ jobs:
             echo "open bake-pin PR for ${br} already exists — branch updated: ${url}"
           else
             for attempt in 1 2 3; do
-              if gh pr create --repo greenautarky/ha-operating-system --base master --head "$br" \
+              if gh pr create --repo greenautarky/ha-operating-system --base "$OS_PIN_BASE" --head "$br" \
                    --title "chore(bake): pin ${SLUG} addon image to ${VER}" \
                    --body-file /tmp/pin-pr-body.md >/dev/null; then
                 break
@@ -484,6 +506,7 @@ jobs:
           STORE: ${{ steps.pr.outputs.url }}
           PIN: ${{ steps.pin.outputs.url }}
           PIN_ACTION: ${{ steps.pinkey.outputs.action }}
+          PIN_BASE_OK: ${{ steps.pinbase.outputs.ok }}
           PIN_OUTCOME: ${{ steps.pin.outcome }}
           PIN_PROOF: ${{ steps.pinproof.outcome }}
         run: |
@@ -493,6 +516,11 @@ jobs:
               || echo "::warning::could not comment on ${STORE}"
           fi
           case "${PIN_ACTION:-}" in
+            "") if [ "${PIN_BASE_OK:-}" = false ]; then
+                  pin_row="**NO PIN PR — OS_PIN_BASE unset or master; pin by hand on the release branch**"
+                else
+                  pin_row="**not reached — see the failed step**"
+                fi ;;
             pin)
               if [ "${PIN_OUTCOME:-}" != success ] || [ "${PIN_PROOF:-}" != success ]; then
                 pin_row="**FAILED — see the failed step** ${PIN:-}"
