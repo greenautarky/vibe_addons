@@ -67,11 +67,13 @@ if not LOCKSTEP.is_file():
     die(f"{LOCKSTEP} not found")
 steps = yaml.safe_load(LOCKSTEP.read_text())["jobs"]["sync-downstream"]["steps"]
 by_name = {s.get("name"): s for s in steps}
-for n in (FIND, OPEN, STORE):
+PINBASE = "Resolve the bake-pin base branch"
+for n in (FIND, OPEN, STORE, PINBASE):
     if n not in by_name:
         die(f"step {n!r} not found in the lockstep workflow")
 FIND_SH, OPEN_SH, STORE_SH = by_name[FIND]["run"], by_name[OPEN]["run"], by_name[STORE]["run"]
-for n, sh in ((FIND, FIND_SH), (OPEN, OPEN_SH), (STORE, STORE_SH)):
+PINBASE_SH = by_name[PINBASE]["run"]
+for n, sh in ((FIND, FIND_SH), (OPEN, OPEN_SH), (STORE, STORE_SH), (PINBASE, PINBASE_SH)):
     if "${{" in sh:
         die(f"step {n!r} has a ${{{{ }}}} expression in its script — it must read env only")
 # The steps must be wired in the right order: find before open, open only on 'pin'.
@@ -196,7 +198,8 @@ def open_pin(script, slug="ga_hmvapp_addon", key="ga_hmvapp_addon", cur="2.5.1",
         env = {"PATH": f"{bindir}:{os.environ['PATH']}", "HOME": td, "GITHUB_OUTPUT": str(out),
                "GH_STATE": str(st), "GH_TOKEN": "x", "CRED": "app", "VER": ver, "KEY": key, "CUR": cur,
                "SLUG": slug, "SRC": slug, "STORE_URL": "https://github.com/greenautarky/vibe_addons/pull/1",
-               "RUN_URL": "https://example.invalid/run", "GIT_CONFIG_NOSYSTEM": "1"}
+               "RUN_URL": "https://example.invalid/run", "GIT_CONFIG_NOSYSTEM": "1",
+               "OS_PIN_BASE": "release/1.5"}
         if create_fails:
             env["CREATE_FAILS"] = "1"
         # the step sleeps between retries; keep the suite fast
@@ -227,16 +230,17 @@ OPEN_CASES = [
      and "ga_hmvapp_addon=ghcr.io/greenautarky/ga_hmvapp_addon-armv7:2.6.0" in r.get("expected", "")
      and sorted(r.get("files", [])) == ["buildroot-external/package/hassio/addon-images.json", "tests/ga_tests/os_integrity/expected.env"]
      and "chore(bake): pin ga_hmvapp_addon addon image to 2.6.0" in r["create_args"]
-     and r.get("url", "").startswith(URL) and r.get("verify_ref") == "origin/ci/pin-ga_hmvapp_addon-2.6.0"),
+     and r.get("url", "").startswith(URL) and r.get("verify_ref") == "origin/ci/pin-ga_hmvapp_addon-2.6.0"
+     and "--base\nrelease/1.5\n" in r["create_args"] and "master" not in r["create_args"]),
     ("key != slug: ga_mosquitto bumps 'mosquitto', branch named by slug",
      dict(slug="ga_mosquitto", key="mosquitto", cur="7.2.3", ver="7.2.4"),
      lambda r: r["rc"] == 0 and r["pushed"] and r.get("pinned") == "7.2.4"),
     ("an open PR for the branch is reused, not duplicated",
      dict(pre_existing=True), lambda r: r["rc"] == 0 and r["pushed"] and "pr create" not in r["calls"]
      and r.get("url", "").endswith("/1234")),
-    ("already pinned at this version -> no branch, no PR, verify against master",
+    ("already pinned at this version -> no branch, no PR, verify against the pin base",
      dict(cur="2.6.0"), lambda r: r["rc"] == 0 and not r["pushed"] and "pr " not in r["calls"]
-     and r.get("verify_ref") == "origin/master"),
+     and r.get("verify_ref") == "origin/release/1.5"),
     ("no PR created or found -> hard error",
      dict(create_fails=True), lambda r: r["rc"] != 0 and "::error::" in r["log"] and "url" not in r),
 ]
@@ -371,7 +375,34 @@ for label, m in STORE_MUTANTS:
         check(f"mutant applies: {label}", False, "mutation did not change the script"); continue
     check(f"mutant caught: {label}", any(not pred(open_store(s2, **kw)) for _, kw, pred in STORE_CASES))
 
+def run_pinbase(base, sh=None):
+    with tempfile.TemporaryDirectory() as td:
+        out = pathlib.Path(td) / "out"; out.touch()
+        env = {"PATH": os.environ["PATH"], "GITHUB_OUTPUT": str(out), "OS_PIN_BASE": base}
+        p = subprocess.run(["bash", "-c", sh or PINBASE_SH], env=env, capture_output=True, text=True)
+        o = dict(l.split("=", 1) for l in out.read_text().splitlines() if "=" in l)
+        return {"rc": p.returncode, "log": p.stdout + p.stderr, **o}
+
+
+print("Resolve the bake-pin base branch (LIVE script) — master must never be a pin target:")
+for label, base, pred in [
+    ("unset -> no pin PR, loud warning", "", lambda r: r["rc"] == 0 and r.get("ok") == "false" and "::warning" in r["log"]),
+    ("master -> no pin PR, loud warning", "master", lambda r: r["rc"] == 0 and r.get("ok") == "false" and "::warning" in r["log"]),
+    ("release/1.5 -> proceeds with that base", "release/1.5", lambda r: r["rc"] == 0 and r.get("ok") == "true" and r.get("base") == "release/1.5"),
+    ("feat/1.6-haos18 -> proceeds with that base", "feat/1.6-haos18", lambda r: r["rc"] == 0 and r.get("ok") == "true" and r.get("base") == "feat/1.6-haos18"),
+]:
+    r = run_pinbase(base); check(label, pred(r), repr(r))
+mut = PINBASE_SH.replace(' || [ "$OS_PIN_BASE" = "master" ]', "")
+check("mutant caught: master accepted as a pin base", mut != PINBASE_SH and run_pinbase("master", mut).get("ok") == "true")
+
 print("wiring:")
+check("pin base resolved before the OS checkout, pin lookup and pin PR",
+      names.index(PINBASE) < names.index("Check out the OS bake pins") < names.index(FIND) < names.index(OPEN))
+check("OS checkout and pin lookup run only when a pin base was resolved",
+      by_name["Check out the OS bake pins"].get("if") == "steps.pinbase.outputs.ok == 'true'"
+      and by_name[FIND].get("if") == "steps.pinbase.outputs.ok == 'true'")
+check("no ha-operating-system PR is created with a hard-coded base",
+      "--base master" not in LOCKSTEP.read_text())
 check("the PR step runs only when the pin was found", by_name[OPEN].get("if") == "steps.pinkey.outputs.action == 'pin'")
 check("the store PR step uses the release-token credential",
       by_name[STORE].get("env", {}).get("GH_TOKEN") == "${{ steps.token.outputs.token }}")
@@ -381,7 +412,7 @@ check("the PR step uses the release-token credential",
       by_name[OPEN].get("env", {}).get("GH_TOKEN") == "${{ steps.token.outputs.token }}")
 
 EXPECTED = (len(FIND_CASES) + len(FIND_MUTANTS) + len(OPEN_CASES) + len(OPEN_MUTANTS)
-            + len(STORE_CASES) + len(STORE_MUTANTS) + 4)
+            + len(STORE_CASES) + len(STORE_MUTANTS) + 4 + 4 + 1 + 3)
 if ran < EXPECTED:
     print(f"::error::only {ran} of {EXPECTED} checks ran")
     raise SystemExit(2)
