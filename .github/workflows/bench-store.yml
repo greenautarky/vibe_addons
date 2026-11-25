@@ -1,0 +1,57 @@
+name: bench-store
+# Branch `bench` = main + bench/candidates.json. Generated, fast-forward only, never by hand.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "37 5 * * *" # an expired candidate turns red, and a hand edit of bench is seen
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet "PyYAML>=6,<7"
+      - run: python3 tests/bench_store/run_fixtures.py
+      - run: python3 scripts/bench_store.py validate
+      - name: The store gate holds on the generated tree
+        run: |
+          set -euo pipefail
+          python3 scripts/bench_store.py build --out "$RUNNER_TEMP/bench"
+          python3 scripts/check_store_images.py "$RUNNER_TEMP/bench"
+
+  publish:
+    needs: check
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install --quiet "PyYAML>=6,<7"
+      - name: Refuse a hand-edited bench, then publish the generated tree on top of it
+        run: |
+          set -euo pipefail
+          git config user.name github-actions; git config user.email github-actions@users.noreply.github.com
+          if git fetch -q --depth 1 origin bench 2>/dev/null; then
+            # only commits this workflow made may be on the branch
+            git log -1 --format=%B FETCH_HEAD | grep -q '^Generated-by: scripts/bench_store.py$' \
+              || { echo "::error::the tip of bench was not generated"; exit 1; }
+            parent="-p $(git rev-parse FETCH_HEAD)"
+          else
+            parent=""
+          fi
+          python3 scripts/bench_store.py build --out "$RUNNER_TEMP/bench"
+          export GIT_INDEX_FILE="$RUNNER_TEMP/idx"
+          git --work-tree="$RUNNER_TEMP/bench" add -A -f
+          tree=$(git write-tree)
+          unset GIT_INDEX_FILE
+          if [ -n "$parent" ] && [ "$tree" = "$(git rev-parse 'FETCH_HEAD^{tree}')" ]; then echo "bench is current"; exit 0; fi
+          # shellcheck disable=SC2086 # parent is empty or "-p SHA"
+          c=$(printf 'bench: main %s + candidates\n\nGenerated-by: scripts/bench_store.py\n' "${GITHUB_SHA:0:9}" | git commit-tree "$tree" $parent)
+          git push origin "$c:refs/heads/bench"
