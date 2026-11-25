@@ -1,13 +1,13 @@
 {
   "candidates": {
     "ga_manager": {
-      "version": "0.280.0",
-      "reason": "image prefetch stack (ga_manager #411-#413, #418; flag default off) on top of 0.278.0/0.279.0; DUT2 (dsgw210) preload proof before any store sync",
+      "version": "0.280.1",
+      "reason": "image prefetch stack (0.280.0, flag default off) plus 0.280.1; DUT2 (dsgw210) preload proof before any store sync",
       "until": "2026-12-18",
-      "config_change": "0.280.0 adds the image_prefetch option block + schema and backup_exclude; without them the flag cannot be set on the device",
+      "config_change": "0.280.x adds the image_prefetch option block + schema (0.280.1: reuse_local_layers) and backup_exclude; without them the flags cannot be set on the device",
       "digests": {
-        "armv7": "sha256:33f118b5b5a2de3aa6b8bfabf3a631e1e27ebcb59c9d0febf63a3ecd76e84f3e",
-        "aarch64": "sha256:49f198e3651d861e05e90ac9cd2756b4d70537103f5f7ff51bb70661e1d92d22"
+        "armv7": "sha256:5916e24239471e35c83c7a0cf949492a48c469a259f53be37a386c12e2c7f6c1",
+        "aarch64": "sha256:e2300d1bb61dea0146aaadec6d74947ed1b57611e6720d536ff8dd0120773cae"
       }
     }
   }
