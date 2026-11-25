@@ -1,0 +1,181 @@
+---
+# Published store entry for the GA Manager add-on.
+# Synced from the source repo greenautarky/ga_manager (ga_manager/config.yaml).
+# The only delta vs. the source config is the `image:` key below: this entry
+# is install-by-pull (the multi-arch image is built by the source repo's CI
+# and published to GHCR), so the source repo can stay private.
+# Keep `version` in lock-step with the GHCR image tag and with the OS bake
+# list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
+name: "GA Manager"
+version: "0.280.0"
+slug: "ga_manager"
+description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
+url: https://github.com/greenautarky/ga_manager
+codenotary: notary@greenautarky.com
+image: ghcr.io/greenautarky/ga_manager-{arch}
+init: false
+startup: services
+homeassistant: "2024.12.0"
+arch:
+  - aarch64
+  - amd64
+  - armv7
+full_access: true
+hassio_api: true
+host_dbus: true
+hassio_role: admin
+homeassistant_api: true
+docker_api: true
+auth_api: true
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:shield-cog
+panel_admin: true
+panel_title: "GA Manager"
+privileged:
+  - SYS_ADMIN
+apparmor: false
+# `protected: false` is required for `docker_api: true` and `full_access: true`
+# to actually take effect — Supervisor silently ignores them on protected
+# addons (the default). With protected: true + docker_api: true, no
+# docker.sock is mounted in the container — verified 2026-05-19 on KIB-SON-0.
+# We need docker exec into sibling addon containers (dongle-flasher) for
+# the zigbee-firmware-update worker.
+protected: false
+journald: true
+host_network: false
+services:
+  - mqtt:want
+ports:
+  "8099/tcp": 8099
+# Supervisor probes /livez and restarts the addon when the process hangs.
+# Without a URL the watchdog toggle only checks "container running" — a hung
+# Python process (K6 2026-07-20: MQTT reconnect-storm, 7h dead :8099) never heals.
+watchdog: "http://[HOST]:[PORT:8099]/livez"
+ports_description:
+  "8099/tcp": "GA Manager REST API. Reachable on host:8099 (=NetBird IP). Bearer auth required for non-Ingress access — token at /data/auth.token (mode 0600). Until Phase 5+ adds rate-limiting + TLS + per-token action-whitelist, the only auth is the Bearer token; rotate via `rm /data/auth.token && ha addons restart`."
+# Staged image blobs (up to ~1 GB) must never ride along in a Supervisor backup
+# of this add-on (design PREFETCH-MVP-DESIGN.md §8). [unverified until the K49 row:
+# that the Supervisor on 2026.10 honours the key for add-on data]
+backup_exclude:
+  - /data/prefetch/**
+map:
+  - type: share
+    read_only: false
+  - type: ssl
+  # homeassistant_config (rw) — mounted at /config in the addon container.
+  # The T4 `converge` worker writes /config/custom_components/ (the
+  # greenautarky_site component) and /config/.storage/ (the
+  # onboarding-wizard trigger). NB: like docker_api, the rw mount only
+  # takes effect with `protected: false` set above (Supervisor gotcha,
+  # see memory/supervisor_docker_api_gotcha.md).
+  - type: homeassistant_config
+    read_only: false
+  - type: all_addon_configs
+    read_only: false
+  - type: data
+    read_only: false
+    path: /data/
+options:
+  log_level: info
+  health_check:
+    interval: 60
+    write_status_file: true
+    status_file_path: "/share/ga_manager/status.json"
+    publish_mqtt: false
+    thresholds:
+      data_disk_warn: 80
+      data_disk_crit: 90
+      ram_warn: 85
+      ram_crit: 95
+      load5_warn: 4.0
+      load5_crit: 8.0
+      boot_grace_period: 600
+      reboots_7d_warn: 5
+  addon_auto_restart:
+    enabled: true
+    max_attempts: 3
+    attempt_window_s: 900
+  bluetooth:
+    enabled: false
+  ha_logging:
+    logs: []
+  ha_recorder:
+    purge_keep_days: 0
+  ethernet:
+    force_enabled: false
+  # ADR-0044 image prefetch (Core only, MVP). DEFAULT OFF; the fm turns it on
+  # per device (addon-config-push). Read by prefetch/options.py at job time.
+  image_prefetch:
+    enabled: false
+    rate_limit_kbps: 0
+    stall_s: 120
+    max_stalled_attempts: 48
+  # ADR-0017 cloud data plane. Every top-level schema key needs a default
+  # here (test_options_and_schema_agree_on_their_keys — a key absent from
+  # options is the same "add-on will not load" class as an unknown type).
+  # The defaults are the INERT state: flag off, empty connection values,
+  # empty allowlist. Since 0.223.0 the per-device credential arrives as the
+  # `cloud_db` block of the creds-write bundle (/data, 0600) and WINS over
+  # these options; they are only the fallback while no block is present.
+  cloud_push_enabled: false
+  cloud_db_host: ""
+  cloud_db_name: ""
+  cloud_db_user: ""
+  cloud_db_password: ""
+  cloud_db_port: 5432
+  cloud_tables: []
+  # 0.227.0: which drain empties the cloud outbox — db (default, the
+  # PostgreSQL writer) or mqtt (fleet broker, cloud/<table>). The bundle's
+  # top-level cloud_transport wins over this option.
+  cloud_transport: db
+schema:
+  log_level: list(trace|debug|info|notice|warning|error|fatal)
+  health_check:
+    interval: int(10,3600)
+    write_status_file: bool
+    status_file_path: str
+    publish_mqtt: bool
+    thresholds:
+      data_disk_warn: int(0,100)
+      data_disk_crit: int(0,100)
+      ram_warn: int(0,100)
+      ram_crit: int(0,100)
+      load5_warn: float(0.0,99.0)
+      load5_crit: float(0.0,99.0)
+      boot_grace_period: int(0,3600)
+      reboots_7d_warn: int(1,100)
+  addon_auto_restart:
+    enabled: bool
+    max_attempts: int(1,20)
+    attempt_window_s: int(60,7200)
+  bluetooth:
+    enabled: bool
+  ha_logging:
+    default: "list(trace|debug|info|notice|warning|error|fatal|critical)?"
+    logs:
+      - "match(^[A-Za-z0-9_.]+:(trace|debug|info|notice|warning|error|fatal|critical)$)"
+  ha_recorder:
+    purge_keep_days: "int?"
+  ethernet:
+    force_enabled: bool
+  image_prefetch:
+    enabled: bool
+    rate_limit_kbps: int(0,1000000)
+    stall_s: int(10,3600)
+    max_stalled_attempts: int(1,10000)
+  # ADR-0017 cloud data plane. Types restricted to shapes already proven in
+  # this file (bool/str/int/list-of-match): an unknown schema type makes the
+  # Supervisor reject the WHOLE config.yaml and drop the add-on from the
+  # store (measured on K0 2026-08-19 — see test_addon_schema_valid.py).
+  # `cloud_db_password` is `str` for the same reason: the `password` type is
+  # not used anywhere else in this file, so it stays out until proven.
+  cloud_push_enabled: bool
+  cloud_db_host: str
+  cloud_db_name: str
+  cloud_db_user: str
+  cloud_db_password: str
+  cloud_db_port: int(1,65535)
+  cloud_tables:
+    - "match(^[a-z_][a-z0-9_]*$)"
+  cloud_transport: list(db|mqtt)
