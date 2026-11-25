@@ -1,12 +1,12 @@
 {
   "candidates": {
     "ga_manager": {
-      "version": "0.277.12",
-      "reason": "influx_freshness (ga_manager #410); DUT2 (dsgw210) proves it before any store sync",
+      "version": "0.277.14",
+      "reason": "influx_freshness (ga_manager #410) and the MQTT identity binding (#417, Odoo #1877); DUT2 (dsgw210) proves it before any store sync",
       "until": "2026-12-18",
       "digests": {
-        "armv7": "sha256:7dbcd40966a87b88b7916fa4f6d221ed776db991d6d5ffb258625134ee15f173",
-        "aarch64": "sha256:ca8ee41cb6a4163fef28856ced8308ca8a32109919635ef887f0bdf5b6f6b6bf"
+        "armv7": "sha256:85ce33194af80c491fe3f2e84fa5f11ffed441a45d5c2c0fe9786796f6566181",
+        "aarch64": "sha256:2a2db937ec5f5dc33b651a720e1337c8c0fc710f7282ea426e1ff27317d9290b"
       }
     }
   }
