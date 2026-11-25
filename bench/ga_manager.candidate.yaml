@@ -7,7 +7,7 @@
 # Keep `version` in lock-step with the GHCR image tag and with the OS bake
 # list (ha-operating-system buildroot-external/package/hassio/addon-images.json).
 name: "GA Manager"
-version: "0.280.1"
+version: "0.280.2"
 slug: "ga_manager"
 description: "GreenAutarky on-device management engine — health, versions, lifecycle, OTA"
 url: https://github.com/greenautarky/ga_manager
@@ -55,10 +55,20 @@ watchdog: "http://[HOST]:[PORT:8099]/livez"
 ports_description:
   "8099/tcp": "GA Manager REST API. Reachable on host:8099 (=NetBird IP). Bearer auth required for non-Ingress access — token at /data/auth.token (mode 0600). Until Phase 5+ adds rate-limiting + TLS + per-token action-whitelist, the only auth is the Bearer token; rotate via `rm /data/auth.token && ha addons restart`."
 # Staged image blobs (up to ~1 GB) must never ride along in a Supervisor backup
-# of this add-on (design PREFETCH-MVP-DESIGN.md §8). [unverified until the K49 row:
-# that the Supervisor on 2026.10 honours the key for add-on data]
+# of this add-on (design PREFETCH-MVP-DESIGN.md §8). The first version of this
+# key, `/data/prefetch/**`, matched NOTHING: measured on DUT2 2026-11-25, a full
+# backup held 1020 MB of staged layers instead of about 50 MB.
+#
+# Why: the Supervisor tests each pattern with PurePath.match against the path it
+# sees (`/data/addons/data/<slug>/prefetch/...`, supervisor/addons/addon.py
+# `_is_excluded_by_filter`), not against the path inside the add-on. A relative
+# pattern matches from the right, an absolute one must equal the whole path
+# (never true here), and `**` is not recursive in PurePath.match. securetar
+# skips an excluded DIRECTORY with everything below it, so the one component
+# `prefetch` is enough and is independent of the repository hash in the slug.
+# Pinned by tests/prefetch/test_backup_exclude.py.
 backup_exclude:
-  - /data/prefetch/**
+  - prefetch
 map:
   - type: share
     read_only: false
