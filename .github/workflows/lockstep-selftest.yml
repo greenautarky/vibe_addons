@@ -1,0 +1,60 @@
+name: lockstep-selftest
+
+# addon-store-lockstep.yml and .github/actions/release-token run only inside a
+# real add-on release, never on a pull request here — so a green PR says
+# nothing about them unless something drives them without a release. This
+# does, on every change to either:
+#
+#   - actionlint (syntax, expressions, shellcheck) over every workflow;
+#   - tests/release_token: the credential selection (App -> loud PAT fallback
+#     -> hard error) from the LIVE action.yml, with mutants that must go red,
+#     plus the public-repo safety wiring of the lockstep;
+#   - tests/lockstep_prs: the store-PR, bake-pin lookup and bake-pin PR steps
+#     from the LIVE workflow, against local bare repos and a stub gh, with
+#     mutants that must go red.
+#
+# Both suites read the live files, never a copy, and exit 2 when a step they
+# drive cannot be found or fewer checks ran than declared.
+#
+# `pull_request`, not `pull_request_target`: the PR's own code runs, with a
+# read-only token and no secrets.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/addon-store-lockstep.yml"
+      - ".github/workflows/lockstep-selftest.yml"
+      - ".github/actions/release-token/**"
+      - "tests/release_token/**"
+      - "tests/lockstep_prs/**"
+  pull_request:
+    paths:
+      - ".github/workflows/addon-store-lockstep.yml"
+      - ".github/workflows/lockstep-selftest.yml"
+      - ".github/actions/release-token/**"
+      - "tests/release_token/**"
+      - "tests/lockstep_prs/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: actionlint (workflow syntax, expressions, shellcheck)
+        # rhysd/actionlint 1.7.7, pinned by digest
+        uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+        with:
+          args: -color
+      - name: Install PyYAML
+        run: pip install --quiet "PyYAML>=6,<7"
+      - name: Fixtures — the release credential
+        run: python3 tests/release_token/run_fixtures.py
+      - name: Fixtures — the store PR and the bake-pin PR
+        run: python3 tests/lockstep_prs/run_fixtures.py

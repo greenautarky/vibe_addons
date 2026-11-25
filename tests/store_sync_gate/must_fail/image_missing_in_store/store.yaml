@@ -1,0 +1,13 @@
+---
+name: ga_InfluxDBv1
+slug: ga_influxdbv1
+version: "0.0.4"
+codenotary: thomas@greenautarky.com
+ports:
+  8086/tcp: 8086
+options:
+  auth: true
+  per_user_secrets: false
+schema:
+  auth: bool
+  per_user_secrets: bool?
